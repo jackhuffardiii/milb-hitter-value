@@ -24,11 +24,11 @@ S15_GROUPS = {
     "speed": ["sb_att_rate", "sb_success", "triple_rate"],
     "posmix": ["pos_share_SS", "pos_share_CF", "pos_share_C"],
     "pace": ["games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level"],
-    "body": ["height_in", "weight_lb", "bmi"],
+    "body": ["height_in"],  # weight_lb/bmi stay in features.parquet for display only (Q15 look-ahead: listed weights are updated post-snapshot)
 }
 S15_KEPT = ["sb_att_rate", "sb_success", "triple_rate", "pos_share_SS", "pos_share_CF", "pos_share_C",
             "games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level",
-            "height_in", "weight_lb", "bmi"]  # groups speed, posmix, pace, body kept by C9 (data/b12_c9.json); B6r imports this
+            "height_in"]  # groups speed, posmix, pace, body kept by C9 (data/b12_c9.json); B6r imports this
 
 
 def _blend(A, cols, w):

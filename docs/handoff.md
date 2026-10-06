@@ -259,3 +259,19 @@ Cause: `stats?group=hitting&sportId=1&teamId=T&playerPool=All` does not return e
 League totals H/HR/BB/SO/SB after: 2023 40,839/5,868/15,819/41,843/3,503 (unchanged); 2024 39,823/5,453/14,929/41,197/3,617 (H was 38,994); 2025 40,138/5,650/15,379/40,645/3,440 (H was 38,686); 2026 39,849/5,575/16,337/40,700/3,289 (unchanged).
 Tests: `tests/test_b1.py::test_mlb_matches_api_team_totals` (2005-2026, within 0.5% of `teams/stats` sums for H, HR, BB, SO, SB) and `test_milb_api_matches_team_totals` (2025-26 per level). Not fixed: `mlb_fielding_games` uses the same per-team fielding pull and may have the same hole (games by position only; not used by value models beyond positional).
 Spec deviations: none.
+
+
+## B12-fix - drop weight/bmi look-ahead (S15, Q15)
+
+weight_lb and bmi leak post-snapshot information (MLB players' listed weights are updated over careers; reached players avg 206 lb vs 196 for non-reached). `S15_GROUPS["body"]` and `S15_KEPT` are now height_in only; weight_lb and bmi stay in features.parquet for display, never model inputs. `python run.py b12` rerun (also on the B1-fix data); the C9 table in the B12 section above is superseded by:
+| group | logloss | ev Spearman | keep |
+|---|---|---|---|
+| baseline | 0.4253 | 0.1559 | |
+| contact | 0.4254 | 0.1554 | no |
+| batted | 0.4283 | 0.1540 | no |
+| speed | 0.4219 | 0.1537 | yes |
+| posmix | 0.4248 | 0.1575 | yes |
+| pace | 0.4209 | 0.1541 | yes |
+| body (height only) | 0.4261 | 0.1581 | yes (Spearman +0.0023, logloss -0.0008 within tol) |
+| all kept (11 features) | 0.4142 | 0.1561 | yes |
+Body gain from 0.0133 Spearman / 0.0145 logloss collapses to noise once weight/bmi are removed, confirming look-ahead; height kept per the rule. Holdout untouched.
