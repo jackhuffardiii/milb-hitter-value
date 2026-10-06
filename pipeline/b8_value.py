@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 from scipy.stats import poisson
 
-from .b5_features import S15_KEPT
 from .b6_models import MODELS, _X, drivers, prior_X
 from .common import DATA, MANUAL
 
@@ -87,7 +86,13 @@ _DEV = {"games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_l
         "PA_s", "PA_highest", "level_num", "log_PA", "years_since_draft"}
 
 
+EXPECT = {"Strikeouts": -1, "Walks": 1, "Power": 1, "Contact quality": 1, "Speed": 1}  # sign of contribution when the lead input is above the training mean
+NOTE = "; net effect also reflects trend/regressed values"
+
+
 def family(feat):
+    if feat.startswith("missingindicator_delta_"):  # "no prior-season delta" flags describe career stage, not the rate they are named after
+        return "Development pace"
     f = feat.removeprefix("missingindicator_").split("=")[0]
     if f in ("age", "age_vs_level"):
         return "Age"
@@ -131,28 +136,32 @@ def full_contrib(fit, group, rows):
     return pd.concat([drivers(mod, rows, t, top=999) for t in ("p_mlb", "war")], ignore_index=True)
 
 
-def _phrases(r, lvl_mean):
+DIR_FEATS = {"Strikeouts": ("blend_K", "K%", True), "Walks": ("blend_BB", "BB%", True), "Power": ("blend_ISO", "ISO", False),
+             "Contact quality": ("blend_BABIP", "BABIP", False), "Speed": ("sb_att_rate", "SB attempts per time on base", True)}
+
+
+def _phrases(r, ref):
+    """Plain-English phrase per family. Directional families compare the family's lead model input with `ref`, the pooled
+    training-row mean of that input (the same reference the model contribution is measured against). Returns {family: (phrase, dir)},
+    dir = +1 above / -1 below the reference, 0 for neutral (multi-input) families."""
     lv = str(r.highest_level).upper() if pd.notna(r.get("highest_level")) else "?"
     ag = r.age_vs_level
-    out = {"Age": (f"Young for level ({r.age:.1f} at {lv}, {abs(ag):.1f} yrs below avg)" if ag < 0
-                   else f"Old for level ({r.age:.1f} at {lv}, {ag:.1f} yrs above avg)") if pd.notna(ag) else "Age"}
-    for fam, col, lab in [("Strikeouts", "blend_K", "K%"), ("Walks", "blend_BB", "BB%"), ("Power", "blend_ISO", "ISO"), ("Contact quality", "blend_BABIP", "BABIP")]:
+    out = {"Age": (f"Age {r.age:.1f}; {abs(ag):.1f} yrs {'younger' if ag < 0 else 'older'} than {lv} avg", 0)}
+    for fam, (col, lab, pct) in DIR_FEATS.items():
         v = r.get(col)
         if pd.notna(v):
-            ref = lvl_mean[col]
-            pct = fam in ("Strikeouts", "Walks")
             f = (lambda x: f"{x:.1%}") if pct else (lambda x: f"{x:.3f}")
-            out[fam] = f"{lab} {f(v)} vs {f(ref)} level avg ({'above' if v > ref else 'below'})"
-    pc = r.get("p_C")
-    out["Position"] = (f"Catcher profile ({r.p_C:.0%} C, pos adj {r.exp_pos_runs:+.1f} runs)" if pd.notna(pc) and pc >= .5
-                       else f"Position adjustment {r.exp_pos_runs:+.1f} runs" if pd.notna(r.get("exp_pos_runs")) else "Position")
-    out["Speed"] = (f"Steal attempts {r.sb_att_rate:.0%} of times on base, {r.sb_success:.0%} success" if pd.notna(r.get("sb_att_rate")) and pd.notna(r.get("sb_success"))
-                    else "Speed: little base-stealing data")
+            pre = "" if fam in ("Strikeouts", "Walks", "Speed") else "MLB-equivalent "
+            out[fam] = (f"{pre}{lab} {f(v)} vs {f(ref[col])} prospect avg", 1 if v > ref[col] else -1)
+    out["Position"] = ((f"Catcher profile ({r.p_C:.0%} C, pos adj {r.exp_pos_runs:+.1f} runs)" if pd.notna(r.get("p_C")) and r.p_C >= .5
+                        else f"Position adjustment {r.exp_pos_runs:+.1f} runs") if pd.notna(r.get("exp_pos_runs")) else "Position", 0)
+    if "Speed" not in out:
+        out["Speed"] = ("Speed: little base-stealing data", 0)
     g = r.get("games_at_current_level")
-    out["Development pace"] = (f"{r.pro_years:.0f} pro years, {g:.0f} games at {lv}" if pd.notna(g) else f"{r.pro_years:.0f} pro years at {lv}") \
-        if pd.notna(r.get("pro_years")) else "Development pace"
-    out["Body"] = f"Height {r.height_in:.0f} in" if pd.notna(r.get("height_in")) else "Body: no height listed"
-    out["Draft pedigree"] = ("Draft: " + (f"round {r.round_num:.0f}, pick {r.pick_overall:.0f}" if pd.notna(r.get("round_num")) else "international/undrafted"))
+    out["Development pace"] = ((f"{r.pro_years:.0f} pro years, {g:.0f} games at {lv}" if pd.notna(g) else f"{r.pro_years:.0f} pro years at {lv}")
+                               if pd.notna(r.get("pro_years")) else "Development pace", 0)
+    out["Body"] = (f"Height {r.height_in:.0f} in" if pd.notna(r.get("height_in")) else "Body: no height listed", 0)
+    out["Draft pedigree"] = ("Draft: " + (f"round {r.round_num:.0f}, pick {r.pick_overall:.0f}" if pd.notna(r.get("round_num")) else "international/undrafted"), 0)
     return out
 
 
@@ -167,17 +176,23 @@ def grouped_drivers(pred, feats):
         total = c.groupby(["player_id", "season", "target"]).contribution.sum()
         g = c.groupby(["player_id", "season", "target", "family"], as_index=False).contribution.sum()
         assert np.allclose(g.groupby(["player_id", "season", "target"]).contribution.sum().reindex(total.index), total, atol=1e-6)
-        lvl = rows.groupby(["season", "highest_level"])[["blend_K", "blend_BB", "blend_ISO", "blend_BABIP"]].mean()
-        ph = {}
-        for r in rows.itertuples(index=False):
-            r = pd.Series(r._asdict())
-            lm = lvl.loc[(r.season, r.highest_level)] if group == "stat" else None
-            ph[(r.player_id, r.season)] = _phrases(r, lm)
-        g["phrase"] = [ph[(p, s)].get(f, f) for p, s, f in zip(g.player_id, g.season, g.family)]
+        tr = feats[(feats.group == group) & (feats.split == "train_era")]
+        if fit == "backtest":
+            tr = tr[tr.season <= 2012]
+        ref = tr[[c for c, _, _ in DIR_FEATS.values()]].mean()
+        ph = {(r.player_id, r.season): _phrases(r, ref) for _, r in rows.iterrows()}
+        pd_ = [ph[(p, s)].get(f, (f, 0)) for p, s, f in zip(g.player_id, g.season, g.family)]
+        g["phrase"], g["input_dir"] = [x[0] for x in pd_], np.array([x[1] for x in pd_])
+        # keep a direction only where it agrees with the family's net contribution; otherwise say so and imply none
+        exp = g.family.map(EXPECT).fillna(0).to_numpy()
+        bad = (g.input_dir.to_numpy() * exp * g.contribution.to_numpy()) < 0
+        g["suppressed"] = bad
+        g.loc[bad, "phrase"] = g.loc[bad, "phrase"] + NOTE
+        g.loc[bad, "input_dir"] = 0
         g["fit"], g["group"] = fit, group
         g["rank"] = g.assign(a=g.contribution.abs()).groupby(["player_id", "season", "target"]).a.rank(ascending=False, method="first").astype(int)
         out.append(g)
-    return pd.concat(out, ignore_index=True)[["player_id", "season", "fit", "group", "target", "family", "contribution", "phrase", "rank"]]
+    return pd.concat(out, ignore_index=True)[["player_id", "season", "fit", "group", "target", "family", "contribution", "phrase", "input_dir", "suppressed", "rank"]]
 
 
 def main():

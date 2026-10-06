@@ -54,4 +54,22 @@ def test_family_sums_and_other_empty():
     full = full_contrib("final", "stat", rows).groupby(["player_id", "target"]).contribution.sum()
     grp = GD[(GD.fit == "final") & GD.player_id.isin(rows.player_id) & (GD.season == 2026) & (GD.group == "stat")].groupby(["player_id", "target"]).contribution.sum()
     assert np.allclose(grp.reindex(full.index), full, atol=1e-6)
-    assert family("missingindicator_delta_K") == "Strikeouts" and family("highest_level=aa") == "Development pace"
+    assert family("missingindicator_delta_K") == "Development pace" and family("highest_level=aa") == "Development pace"
+
+
+def test_war_interval_residual_based():
+    s = VAL[(VAL.group == "stat")]
+    assert ((s.war_q10 <= s.war_q50) & (s.war_q50 <= s.war_q90)).all()
+    assert ((s.war_q10 <= s.war_mean) & (s.war_mean <= s.war_q90)).all()  # mean is inside its own 10-90 range
+    # median sits below the mean (right-skewed WAR outcomes), by at most the largest bin median residual; NOT within 1 WAR (see handoff)
+    assert (s.war_q50 - s.war_mean).abs().max() < 3
+
+
+def test_phrase_direction_agrees_with_contribution():
+    g = GD[(GD.group == "stat") & GD.family.isin(["Strikeouts", "Walks", "Power", "Contact quality", "Speed"])]
+    exp = g.family.map({"Strikeouts": -1, "Walks": 1, "Power": 1, "Contact quality": 1, "Speed": 1})
+    assert ((g.input_dir * exp * g.contribution) >= 0).all()  # a phrase never implies a direction the contribution contradicts
+    assert g[g.fit == "final"].suppressed.mean() < 0.2  # and few phrases had to drop their direction
+    assert g[g.suppressed].phrase.str.contains("net effect also reflects").all()
+    age = GD[GD.family == "Age"].phrase
+    assert (~age.str.contains("Young for level|Old for level")).all()

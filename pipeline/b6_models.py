@@ -124,6 +124,25 @@ def _lin_cv(target, X, y, groups):
     return oof
 
 
+# ---------- binned residual intervals for WAR (A7) ----------
+NBINS = 5
+
+
+def binned_resid(make, X, y, groups):
+    """GroupKFold(5) OOF predictions of `make()` on (X, y); residual 10/50/90 quantiles per quintile of the OOF prediction.
+    Returns {'edges': 4 interior quintile cut points, 'q': (5, 3) residual quantiles}."""
+    oof = np.zeros(len(y))
+    for tr, te in GroupKFold(5).split(X, y, groups):
+        oof[te] = _predict(make().fit(X.iloc[tr], y[tr]), X.iloc[te], "war")
+    edges = np.quantile(oof, np.arange(1, NBINS) / NBINS)
+    b = np.searchsorted(edges, oof)
+    return {"edges": edges, "q": np.array([np.quantile((y - oof)[b == k], QS) for k in range(NBINS)])}
+
+
+def war_interval(resid, pred):
+    return pred[:, None] + resid["q"][np.searchsorted(resid["edges"], pred)]
+
+
 # ---------- target frames ----------
 def _targets(df):
     """Per-target (mask, y) on a features frame joined with war_target flags."""
@@ -153,7 +172,7 @@ def select_stat(train):
             cv[t].update(spearman_linear=sl, spearman_lightgbm=sg)
             better = sg > sl
         cfg[t] = {"chosen": "lightgbm" if better else "linear", "n": n}
-    for t in ("war", "eta"):  # quantile iteration counts
+    for t in ("eta",):  # quantile iteration counts (WAR intervals are binned OOF residuals, A7)
         m, y = tg[t]
         Xm, ym, gm = X[m].reset_index(drop=True), y[m], g[m]
         cfg[t]["qn"] = {q: _lgb_cv(t, Xm, ym, gm, objective="quantile", alpha=q)[1] for q in QS}
@@ -213,7 +232,11 @@ def fit_stat(train, cfg):
         Xm, ym = X[m], y[m]
         c = cfg[t]
         mod[t] = (_lgb(t, c["n"]) if c["chosen"] == "lightgbm" else _linear(t)).fit(Xm, ym)
-        if t != "p_mlb":
+        if t == "war":
+            gm = train.player_id.to_numpy()[m]
+            mk = (lambda: _lgb(t, c["n"])) if c["chosen"] == "lightgbm" else (lambda: _linear(t))
+            mod["war_resid"] = binned_resid(mk, Xm.reset_index(drop=True), ym, gm)
+        elif t == "eta":
             mod[t + "_q"] = {q: _lgb(t, c["qn"][q], objective="quantile", alpha=q).fit(Xm, ym) for q in QS}
     return mod
 
@@ -230,7 +253,7 @@ def predict_stat(mod, df, calibrate=True):
     if calibrate:
         out["p_mlb"] = np.clip(mod["recal"].predict(out.p_mlb.to_numpy()), 0, 1)
     out["war_mean"] = _predict(mod["war"], X, "war")
-    out[["war_q10", "war_q50", "war_q90"]] = _sorted_q(mod, "war_q", X)
+    out[["war_q10", "war_q50", "war_q90"]] = war_interval(mod["war_resid"], out.war_mean.to_numpy())
     out["eta_mean"] = _predict(mod["eta"], X, "eta")
     out[["eta_q10", "eta_q50", "eta_q90"]] = _sorted_q(mod, "eta_q", X, 0)
     out["ev_war"] = out.p_mlb * out.war_mean
@@ -245,9 +268,11 @@ def fit_prior(train):
     for t in ("p_mlb", "war", "eta"):
         m, y = tg[t]
         mod[t] = _linear(t).fit(X[m], y[m])
-        if t != "p_mlb":  # empirical residual quantiles (A7)
+        if t == "war":  # binned OOF residual quantiles (A7)
+            mod["war_resid"] = binned_resid(lambda: _linear("war"), X[m].reset_index(drop=True), y[m], train.player_id.to_numpy()[m])
+        elif t == "eta":
             r = y[m] - _predict(mod[t], X[m], t)
-            mod[t + "_resid"] = np.quantile(r, QS)
+            mod["eta_resid"] = np.quantile(r, QS)
     return mod
 
 
@@ -256,7 +281,7 @@ def predict_prior(mod, df):
     out = pd.DataFrame(index=df.index)
     out["p_mlb"] = _predict(mod["p_mlb"], X, "p_mlb")
     out["war_mean"] = _predict(mod["war"], X, "war")
-    out[["war_q10", "war_q50", "war_q90"]] = out.war_mean.to_numpy()[:, None] + mod["war_resid"]
+    out[["war_q10", "war_q50", "war_q90"]] = war_interval(mod["war_resid"], out.war_mean.to_numpy())
     out["eta_mean"] = _predict(mod["eta"], X, "eta")
     out[["eta_q10", "eta_q50", "eta_q90"]] = np.clip(out.eta_mean.to_numpy()[:, None] + mod["eta_resid"], 0, None)
     out["ev_war"] = out.p_mlb * out.war_mean
