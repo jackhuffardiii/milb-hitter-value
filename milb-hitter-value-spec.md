@@ -92,7 +92,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q6** Benchmark is Baseball America preseason top 100. If a year cannot be sourced, MLB Pipeline substitutes and the page says so.
 - **Q7** Eligibility for stat projection: 150+ PA at A or above across the last two seasons, and still rookie-eligible (under 130 MLB AB). Everyone else falls to the S8 prior or is excluded.
 - **Q8** MLB park factors for batting runs computed the same way as MiLB ones (home/road splits from Stats API), not borrowed from bWAR.
-- **Q9** Hosting: public GitHub repo with GitHub Pages for the site. Not decided in the interview.
+- **Q9** Hosting: static site deployed to Netlify after B10 (user decision, 2026-10-06).
 - **Q10** $/WAR and arb percentages are pinned to cited public figures at build time; no number is fixed in this spec.
 - **Q11** PBP raw files are downloaded, aggregated to park-season, then deleted to keep disk use sane.
 - **Q12** Name to MLBAM ID matching for top-100 lists rejects ambiguous matches instead of guessing; unmatched names are listed.
