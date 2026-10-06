@@ -20,7 +20,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **S2** Player bio and acquisition: birthdate, bats, MLB debut date from the Stats API people endpoint; draft round, pick, and signing bonus from the draft endpoint.
 - **S3** MLB outcomes: MLB season batting and games by position, 2005 to 2026, from the Stats API.
 - **S4** Simplified in-house WAR: wOBA-based batting runs, park adjusted, plus positional adjustment and replacement level. No fielding, no baserunning. Validated against bWAR.
-- **S5** Environment adjustments: MiLB park factors from PBP home/road splits (multi-year, regressed), and league-season translation factors from matched pairs, chained level to level up to MLB.
+- **S5** Environment adjustments: park factors from MLB Stats API team home/road splits (MiLB and MLB, 2005 to 2026; 3-year window, regressed by reliability-derived k), and league-season translation factors from matched pairs, chained level to level up to MLB. Changed from PBP during B3: PBP ends May 2025 and could not cover the 2026 snapshot.
 - **S6** MLEs: MLB-equivalent K%, BB%, ISO, BABIP for every player-season, regressed by sample size.
 - **S7** Three models trained on 2005 to 2017 snapshots: P(reach MLB), E[WAR in first 6 MLB seasons | reached], and ETA (years to debut | reached). Features: MLEs, age relative to level, highest level, projected MLB position, year-over-year trajectory.
 - **S8** Prior for players with no A-or-above sample (Rookie, DSL, pre-2021 A-): P(MLB) and E[WAR] from draft slot and bonus, flagged low confidence.
@@ -60,7 +60,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 | ID | What | Source | Lives in |
 |---|---|---|---|
 | D1 | MiLB season batting 2005 to 2024 | repo release `season_player_batting` | `data/raw/milb_batting/` |
-| D2 | MiLB PBP 2005 to 2025 (park factors only) | repo release `pbp` (~680 files, multi-GB) | aggregated to `data/park_factors.parquet`; raw deleted after |
+| D2 | MiLB PBP 2021 to 2025, AAA and Low-A only (batted-ball data for S13/S14) | repo release `pbp` | `data/raw/pbp/`, aggregated by B11 |
 | D3 | MiLB season batting 2025 to 2026 | MLB Stats API | `data/raw/statsapi/` |
 | D4 | Player bio (birthdate, bats, debut) | Stats API `/people` | `data/players.parquet` |
 | D5 | Draft picks and bonuses | Stats API `/draft/{year}` | `data/draft.parquet` |
@@ -94,7 +94,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q8** MLB park factors for batting runs computed the same way as MiLB ones (home/road splits from Stats API), not borrowed from bWAR.
 - **Q9** Hosting: static site deployed to Netlify after B10 (user decision, 2026-10-06).
 - **Q10** $/WAR and arb percentages are pinned to cited public figures at build time; no number is fixed in this spec.
-- **Q11** PBP raw files are downloaded, aggregated to park-season, then deleted to keep disk use sane.
+- **Q11** PBP downloads limited to the tracked cells B11 needs (AAA 2022+, Low-A 2021+); raw files deleted after aggregation.
 - **Q12** Name to MLBAM ID matching for top-100 lists rejects ambiguous matches instead of guessing; unmatched names are listed.
 
 - **Q13** Baseball Savant serves MiLB Statcast for AAA and FSL in bulk-downloadable form. If not, S13 and S14 fall back to repo PBP through May 2025 only.

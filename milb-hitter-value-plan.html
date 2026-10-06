@@ -148,7 +148,7 @@
 <div class="row"><span class="id">S2</span><p>Player bio and acquisition: birthdate, bats, MLB debut; draft round, pick and signing bonus.<span class="why">Stats API <code>/people</code> and <code>/draft</code>.</span></p></div>
 <div class="row"><span class="id">S3</span><p>MLB outcomes: season batting and games by position, 2005–2026.</p></div>
 <div class="row"><span class="id">S4</span><p>Simplified in-house WAR: park-adjusted wOBA batting runs + positional adjustment + replacement level. Validated against bWAR.<span class="why">No fielding, no baserunning.</span></p></div>
-<div class="row"><span class="id">S5</span><p>Environment: MiLB park factors from PBP home/road splits, multi-year and regressed; league-season translation factors from matched pairs, chained to MLB.</p></div>
+<div class="row"><span class="id">S5</span><p>Environment: park factors from Stats API team home/road splits (MiLB and MLB, 2005–2026, 3-year window, regressed); league-season translation factors from matched pairs, chained to MLB.<span class="why">Changed from PBP during B3: PBP ends May 2025 and could not cover the 2026 snapshot.</span></p></div>
 <div class="row"><span class="id">S6</span><p>MLEs: MLB-equivalent K%, BB%, ISO, BABIP per player-season, regressed by sample size.</p></div>
 <div class="row"><span class="id">S7</span><p>Three models trained on 2005–2017 snapshots: P(reach MLB), E[WAR in first 6 MLB seasons | reached], ETA.<span class="why">Features: MLEs, age vs level, highest level, projected MLB position, trajectory.</span></p></div>
 <div class="row"><span class="id">S8</span><p>Draft prior for players with no A-or-above sample (Rookie, DSL, pre-2021 A-), flagged low confidence.</p></div>
@@ -188,7 +188,7 @@
 <div class="scroll"><table>
 <tr><th>id</th><th>what</th><th>where it comes from</th><th>where it lives</th></tr>
 <tr><td class="id-cell">D1</td><td>MiLB season batting 2005–2024</td><td>repo release <code>season_player_batting</code></td><td><code>data/raw/milb_batting/</code></td></tr>
-<tr><td class="id-cell">D2</td><td>MiLB PBP 2005–2025 (park factors only)</td><td>repo release <code>pbp</code>, ~680 files, multi-GB</td><td><code>data/park_factors.parquet (raw deleted)</code></td></tr>
+<tr><td class="id-cell">D2</td><td>MiLB PBP 2021–2025, AAA and Low-A (batted balls for S13/S14)</td><td>repo release <code>pbp</code></td><td><code>data/raw/pbp/ (aggregated by B11)</code></td></tr>
 <tr><td class="id-cell">D3</td><td>MiLB season batting 2025–2026</td><td>MLB Stats API</td><td><code>data/raw/statsapi/</code></td></tr>
 <tr><td class="id-cell">D4</td><td>Player bio</td><td>Stats API /people</td><td><code>data/players.parquet</code></td></tr>
 <tr><td class="id-cell">D5</td><td>Draft picks and bonuses</td><td>Stats API /draft/{year}</td><td><code>data/draft.parquet</code></td></tr>
@@ -223,7 +223,7 @@
 <div class="row ask"><span class="id">Q8</span><p>MLB park factors computed the same way as MiLB ones, not borrowed from bWAR.</p></div>
 <div class="row ask"><span class="id">Q9</span><p>Hosting: static site deployed to Netlify after B10.<span class="why">User decision, 2026-10-06.</span></p></div>
 <div class="row ask"><span class="id">Q10</span><p>$/WAR and arb percentages pinned to cited public figures at build time.<span class="why">No number is fixed in this spec.</span></p></div>
-<div class="row ask"><span class="id">Q11</span><p>PBP files downloaded, aggregated to park-season, then deleted.<span class="why">Keeps disk use sane.</span></p></div>
+<div class="row ask"><span class="id">Q11</span><p>PBP downloads limited to the tracked cells B11 needs (AAA 2022+, Low-A 2021+), deleted after aggregation.</p></div>
 <div class="row ask"><span class="id">Q12</span><p>Top-100 name matching rejects ambiguous matches rather than guessing; unmatched names are listed.</p></div>
 <div class="row ask"><span class="id">Q13</span><p>Baseball Savant serves MiLB Statcast for AAA and FSL in bulk.<span class="why">If not, S13 and S14 fall back to repo PBP through May 2025 only.</span></p></div>
 <div class="row ask"><span class="id">Q14</span><p>Cards flag when S14 was applied.<span class="why">Tracking coverage depends on organization: at Low-A, FSL affiliates only.</span></p></div>
