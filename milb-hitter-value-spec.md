@@ -62,7 +62,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 | ID | What | Source | Lives in |
 |---|---|---|---|
 | D1 | MiLB season batting 2005 to 2024 | repo release `season_player_batting` | `data/raw/milb_batting/` |
-| D2 | MiLB PBP 2021 to 2025, AAA and Low-A only (batted-ball data for S13/S14) | repo release `pbp` | `data/raw/pbp/`, aggregated by B11 |
+| D2 | Repo PBP: not used. Measured coverage only (tracking starts 2021). Superseded by D11 during B11. | n/a | n/a |
 | D3 | MiLB season batting 2025 to 2026 | MLB Stats API | `data/raw/statsapi/` |
 | D4 | Player bio (birthdate, bats, debut) | Stats API `/people` | `data/players.parquet` |
 | D5 | Draft picks and bonuses | Stats API `/draft/{year}` | `data/draft.parquet` |
@@ -70,7 +70,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 | D7 | bWAR (validation only) | Baseball-Reference `war_daily_bat` | `data/raw/bwar.csv` |
 | D8 | Preseason top-100 lists 2014 to 2018 (MLB Pipeline; BA paywalled) | hand collected from mlb.com, matched to MLBAM IDs | `data/manual/top100.csv` |
 | D9 | $ model parameters with citations | public sources at build time | `data/manual/dollar_params.csv` |
-| D11 | MiLB Statcast batted balls 2025 to 2026 (AAA, FSL) and MLB Statcast 2023 to 2026 | Baseball Savant | `data/raw/savant/` |
+| D11 | MiLB Statcast balls in play 2021 to 2026 (AAA, Low-A FSL), server-filtered to batted balls | Baseball Savant minors CSV, per day | `data/raw/savant/` (one parquet per day) |
 | D12 | MiLB pitch calls 2025 to 2026, all levels A to AAA (swings/whiffs for S15 contact rate) | MLB Stats API game feeds | `data/raw/statsapi/`, aggregated to player-season |
 | D10 | Published outputs | pipeline | `site/data/*.json` |
 
@@ -98,10 +98,10 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q8** MLB park factors for batting runs computed the same way as MiLB ones (home/road splits from Stats API), not borrowed from bWAR.
 - **Q9** Hosting: static site deployed to Netlify after B10 (user decision, 2026-10-06).
 - **Q10** $/WAR and arb percentages are pinned to cited public figures at build time; no number is fixed in this spec.
-- **Q11** PBP downloads limited to the tracked cells B11 needs (AAA 2022+, Low-A 2021+); raw files deleted after aggregation.
+- **Q11** No PBP downloads. Savant serves batted balls only (~0.7 MB/day vs 5.3 GB of pitch-level PBP), cached per day so interrupted runs resume.
 - **Q12** Name to MLBAM ID matching for top-100 lists rejects ambiguous matches instead of guessing; unmatched names are listed.
 
-- **Q13** Baseball Savant serves MiLB Statcast for AAA and FSL in bulk-downloadable form. If not, S13 and S14 fall back to repo PBP through May 2025 only.
+- **Q13** Confirmed 2026-10-06: Baseball Savant minors CSV serves AAA and FSL batted balls for 2021 to 2026 with real event outcomes.
 - **Q14** Cards flag when S14 was applied, since tracking coverage depends on organization (FSL affiliates only at Low-A).
 - **Q15** Height and weight are current values from the people endpoint, not as of each snapshot. Mild look-ahead leak; stated on the methodology page.
 - **Q16** If game-feed pitch calls for 2025 to 2026 cannot be pulled, contact rate is imputed for those seasons from K% and swing-free features, flagged on cards.

@@ -190,7 +190,7 @@
 <div class="scroll"><table>
 <tr><th>id</th><th>what</th><th>where it comes from</th><th>where it lives</th></tr>
 <tr><td class="id-cell">D1</td><td>MiLB season batting 2005–2024</td><td>repo release <code>season_player_batting</code></td><td><code>data/raw/milb_batting/</code></td></tr>
-<tr><td class="id-cell">D2</td><td>MiLB PBP 2021–2025, AAA and Low-A (batted balls for S13/S14)</td><td>repo release <code>pbp</code></td><td><code>data/raw/pbp/ (aggregated by B11)</code></td></tr>
+<tr><td class="id-cell">D2</td><td>Repo PBP: not used (superseded by D11)</td><td>n/a</td><td><code>n/a</code></td></tr>
 <tr><td class="id-cell">D3</td><td>MiLB season batting 2025–2026</td><td>MLB Stats API</td><td><code>data/raw/statsapi/</code></td></tr>
 <tr><td class="id-cell">D4</td><td>Player bio</td><td>Stats API /people</td><td><code>data/players.parquet</code></td></tr>
 <tr><td class="id-cell">D5</td><td>Draft picks and bonuses</td><td>Stats API /draft/{year}</td><td><code>data/draft.parquet</code></td></tr>
@@ -198,7 +198,7 @@
 <tr><td class="id-cell">D7</td><td>bWAR (validation only)</td><td>Baseball-Reference war_daily_bat</td><td><code>data/raw/bwar.csv</code></td></tr>
 <tr><td class="id-cell">D8</td><td>Preseason top-100 lists 2014–2018 (MLB Pipeline; BA paywalled)</td><td>mlb.com, matched to MLBAM IDs</td><td><code>data/manual/top100.csv</code></td></tr>
 <tr><td class="id-cell">D9</td><td>$ model parameters with citations</td><td>public sources at build time</td><td><code>data/manual/dollar_params.csv</code></td></tr>
-<tr><td class="id-cell">D11</td><td>MiLB Statcast 2025–2026 (AAA, FSL) and MLB Statcast 2023–2026</td><td>Baseball Savant</td><td><code>data/raw/savant/</code></td></tr>
+<tr><td class="id-cell">D11</td><td>MiLB Statcast balls in play 2021–2026 (AAA, FSL)</td><td>Baseball Savant minors CSV, per day</td><td><code>data/raw/savant/</code></td></tr>
 <tr><td class="id-cell">D12</td><td>MiLB pitch calls 2025–2026, A to AAA (contact rate)</td><td>Stats API game feeds</td><td><code>data/raw/statsapi/</code></td></tr>
 <tr><td class="id-cell">D10</td><td>Published outputs</td><td>pipeline</td><td><code>site/data/*.json</code></td></tr>
 </table></div>
@@ -227,9 +227,9 @@
 <div class="row ask"><span class="id">Q8</span><p>MLB park factors computed the same way as MiLB ones, not borrowed from bWAR.</p></div>
 <div class="row ask"><span class="id">Q9</span><p>Hosting: static site deployed to Netlify after B10.<span class="why">User decision, 2026-10-06.</span></p></div>
 <div class="row ask"><span class="id">Q10</span><p>$/WAR and arb percentages pinned to cited public figures at build time.<span class="why">No number is fixed in this spec.</span></p></div>
-<div class="row ask"><span class="id">Q11</span><p>PBP downloads limited to the tracked cells B11 needs (AAA 2022+, Low-A 2021+), deleted after aggregation.</p></div>
+<div class="row ask"><span class="id">Q11</span><p>No PBP downloads. Savant serves batted balls only, cached per day.<span class="why">~0.7 MB/day vs 5.3 GB of pitch-level PBP.</span></p></div>
 <div class="row ask"><span class="id">Q12</span><p>Top-100 name matching rejects ambiguous matches rather than guessing; unmatched names are listed.</p></div>
-<div class="row ask"><span class="id">Q13</span><p>Baseball Savant serves MiLB Statcast for AAA and FSL in bulk.<span class="why">If not, S13 and S14 fall back to repo PBP through May 2025 only.</span></p></div>
+<div class="row ask"><span class="id">Q13</span><p>Confirmed: Savant minors CSV serves AAA and FSL batted balls 2021–2026 with real event outcomes.</p></div>
 <div class="row ask"><span class="id">Q14</span><p>Cards flag when S14 was applied.<span class="why">Tracking coverage depends on organization: at Low-A, FSL affiliates only.</span></p></div>
 <div class="row ask"><span class="id">Q15</span><p>Height and weight are current values, not as of each snapshot.<span class="why">Mild look-ahead leak, stated on the methodology page.</span></p></div>
 <div class="row ask"><span class="id">Q16</span><p>If 2025–2026 pitch calls cannot be pulled, contact rate for those seasons is imputed and flagged.</p></div>
