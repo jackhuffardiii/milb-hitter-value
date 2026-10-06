@@ -180,3 +180,29 @@ C2 (primary, n=264): pooled Spearman model 0.217 vs list 0.379, diff -0.161, 90%
 ### Quirks / spec deviations
 - D8/Q6/S9: lists are MLB Pipeline, not BA, for all years (BA paywalled); list years are 2014-2018 (preseason after holdout snapshots 2013-2017) while the spec table says 2013 to 2017.
 - C3 baseline: logistic and ridge on s<=2012 stat rows, OPS from summed counting stats at highest level in s. Baseline Spearman beats the model's on realized WAR (model's ev has Spearman 0.170 on the stat holdout, matching b6_metrics).
+
+## B11 - Batted-ball layer (S13, S14, C8, D2, D11, Q11, Q13, Q14)
+
+Run: `python run.py b11` (module `pipeline/b11_batted.py`; tests `tests/test_b11.py`). Registered between b6 and b7. Needs B1-B6 outputs. First run ~11.5 min (downloads); rerun from cache ~50 s. Rerunnable after a B6 refit (rescore step reads current features/predictions/models and asserts it reproduces predictions.parquet).
+
+Source: Baseball Savant minors Statcast CSV, one request per day 2021-04-01..2026-09-30 (Apr-Sep), balls-in-play filter, cached as data/raw/savant/{day}.parquet (1,100 files). Download ~514 MB (HTTP bodies), 4 concurrent, 0.2 s sleep. game_pk -> level via Stats API schedule (sportId 11 = aaa, 14 = a), only those kept. Events from Savant `events` (errors/FC/DP = out), bunts excluded, rows need launch_speed and launch_angle.
+
+### data/bip.parquet (625,625 rows; one per tracked BIP)
+batter int, season, level (aaa|a), game_pk, home_team, launch_speed, launch_angle, spray_angle (deg, pull negative both hands, LHB flipped), stand, outcome (out|1B|2B|3B|HR), source ('savant'), p_out/p_1B/p_2B/p_3B/p_HR (out-of-fold by batter, GroupKFold 5, per-level LightGBM multiclass on EV/LA/spray; sums to 1).
+BIP by level x season (a / aaa): 2021 22,273 / 0; 2022 25,273 / 41,496; 2023 25,037 / 110,421; 2024 26,389 / 107,803; 2025 27,252 / 107,151; 2026 26,177 / 106,353.
+
+### data/batted_ball.parquet (S13, display only; player_id x season x level, 6,182 rows)
+n_bip_tracked, share_bip_tracked (tracked / (AB-SO+SF)), avg_ev, ev90, hard_hit_pct (EV>=95), avg_la, la_sd, sweet_spot_pct (LA 8-32), barrel_pct (piecewise-linear approximation of the Statcast barrel table, see `barrel()`).
+
+### S14 / C8 (data/b11_c8.json)
+xBABIP = sum(P1B+P2B+P3B)/sum(1-PHR) over tracked BIP; xISO = sum(P2B+2P3B+3PHR)/n_tracked * (AB-SO+SF)/AB (scaled to actual AB via tracked share). Park-neutral by construction; blended with B4 neutral_ISO/BABIP per row: adj = w*x + (1-w)*obs, w = n/(n+k), n = tracked BIP attributed to the row. k fit on AAA 2022->2023, 2023->2024 (>=200 PA, >=50 tracked BIP): k_ISO = 50, k_BABIP = 100 (grid in json).
+(a) AAA year-ahead RMSE vs next-season neutral rate, observed -> adjusted: 2024->2025 (held out, n=185) ISO .0517 -> .0506, BABIP .0466 -> .0423 PASS; 2023->2024 (n=203) ISO .0512 -> .0480, BABIP .0437 -> .0408; 2025->2026 (n=179) ISO .0532 -> .0524, BABIP .0477 -> .0424.
+(b) AAA s (2022-2025, >=200 PA, >=50 tracked BIP) -> MLB s+1 (>=150 PA), n=225, reg_ MLE baseline -> S14-adjusted: ISO .0502 -> .0494, BABIP .0433 -> .0440 (adjusted worse) FAIL.
+s14_pass = False (null result, not tuned). predictions_final.parquet = B6 fit=='final' rows unchanged with s14_applied False everywhere and *_base columns NaN; drivers_final likewise. The rescore path (adjusted features, B6 predict, drivers) is implemented and exercised only through the no-change reproduction check; it activates automatically if a rerun passes.
+
+### data/predictions_final.parquet / data/drivers_final.parquet
+Same grain/columns as predictions/drivers (fit=='final') plus s14_applied bool, {p_mlb,war_mean,war_q10,war_q50,war_q90,eta_mean,ev_war}_base (NaN unless applied); drivers add feature_base/feature_value_base/contribution_base.
+
+### Quirks / Spec deviations
+- D2/Q11: repo PBP not used; all batted balls come from Savant (D11/Q13) 2021-2026, Low-A is FSL parks only, AAA full from 2023 (2022 partial, ~41k BIP), none for AAA 2021.
+- Only AAA and Low-A tracked; 2026 rows are 2026 Apr-Sep.
