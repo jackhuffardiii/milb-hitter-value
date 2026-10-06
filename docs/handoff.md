@@ -327,3 +327,25 @@ Run: `python run.py b9` (module `pipeline/b9_site.py`; tests `tests/test_b9.py`;
 - Card EV = p_mlb x surplus_if_mlb (tested). Medians are labeled "median"; the mean is the central estimate (right-skewed outcomes).
 - Pages verified at 375 px: no horizontal page scroll (tables scroll in their own region). Headless Chrome cannot render below ~500 px, so mobile screenshots in `docs/screens/*_375.png` are 375 px iframes.
 - Spec deviations: none.
+
+
+## B10 - 2026 snapshot run, smell test, publish (S12, C5, C6, Q9)
+
+Run: `python run.py` (all steps, from cached raw data). `run.py` now prints per-step times. Full rebuild 2026-10-06: b1 22, b3 1, b2 1, b4 9, b5 1, b12 44, b6 63, b11 55, b7 2, b8 4, b9 22; total 223 s. Outputs byte-identical to the committed `site/` (rebuild is deterministic). `pytest`: 96 passed, 1 xfailed.
+
+### C6 smell test (2026 top 50 vs MLB Pipeline Top 100, mlb.com/prospects/top100, read 2026-10-06)
+- Pipeline list has 76 hitters (24 pitchers out of scope, X1). Matched by name to the leaderboard: 73. Not on the board: Tyler Bell, Derek Curiel (rookie-level/insufficient A+ sample). Luis Hernández (#25) matches two board players with the same name, rejected per Q12 (the 17-year-old prior-group row, board #917, is likely him).
+- 33 of our top 50 are on Pipeline's list. Spearman of our rank vs Pipeline rank among matched hitters: 0.32 (p = 0.005).
+- Consensus at the top: of Pipeline's top 10 hitters (Made, Arias, De Vries, De Paula, Willits, Gonzalez, Walcott, Rodriguez, Emerson, Jenkins), 8 are in our top 13. Exceptions: Josuar Gonzalez (#7 -> 44, A ball, p_mlb 0.84) and Grady Emerson (#12 -> 359).
+- Disagreements, explained by drivers:
+  1. 2025 draftees with little pro time fall to the S8 prior, which tops out near 3 WAR and has no scouting input: Emerson (#12 -> 359), Cholowsky (#14 -> 387), Lackey (#18 -> 362), Booth (#36 -> 352), Burress (#37 -> 578), Lombard (#65 -> 418). Draft pedigree drives their p_mlb; the WAR prior is flat. This is the largest systematic gap.
+  2. International teenagers at rookie level get the population prior (Q1, no bonus data): Renteria (#73 -> 1,258), Gomez (#76 -> 1,390).
+  3. College bats young for AA with strong walk rates rank well above Pipeline: Rincon (#96 -> 15; BB% 10.5 vs 5.9 avg, 1.8 yrs young for AA), Houston (#54 -> 14), Curley (unranked -> 4; BB% 10.6). Unranked top-25 hitters (Curley, Adams, Walton, Voit, Jesús Báez, Genao, Munroe, Primera) fit this profile.
+  4. Very young for level: Southisene (#58 -> 11; 4.5 yrs young for AA), Ebel (#93 -> 20; 3.7 yrs young for A+). The Age family is the largest driver for both.
+  5. Strikeouts pull down raw-tools players: Ethan Holliday (#23 -> 248; K% 46.2 in 152 PA at A), Ike Irish (#95 -> 398; average age for A+, bat-first position).
+- Verdict: passes. The consensus elite are at the top, every large gap traces to a card driver, and the systematic gaps (recent draftees, international teenagers, age weighting) match the model's stated limits (S8, Q1, X7).
+
+### Publish (Q9)
+Code on GitHub; `site/` deployed to Netlify as a static folder (no build command).
+
+Spec deviations: none.
