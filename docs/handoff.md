@@ -91,3 +91,29 @@ r vs bWAR WAR = 0.8505 (threshold 0.85, passes barely); r vs bWAR (runs_bat+runs
 
 ### Quirks / deviations
 Per-600-PA league bat_runs among non-pitchers is ~+1.9 runs pre-2020 (pitcher bats excluded), ~0 after universal DH. No spec deviations. 2020 oWAR uses the 60-game season with the same per-162 positional proration (so positional/replacement runs are scaled by games/PA correctly).
+
+## B4 - MLE translation (S5 translation part, S6, A5)
+
+Run: `python run.py b4` (module `pipeline/b4_mle.py`; tests `.venv/bin/pytest tests/test_b4.py -q`). ~10 s. Also writes `data/b4_k.json` (k values).
+
+Method: affiliated A, A+, AA, AAA non-pitcher rows only (Mexican League id 125 and Rookie/a- excluded; pitchers excluded via primary_pos_milb / players.primary_pos). Rates per PA: K=SO/PA, BB=(BB-IBB+HBP)/PA, ISO=(TB-H)/AB, BABIP per BIP=(AB-SO-HR+SF). Park-neutral = rate / ppf (K by ppf_SO, BB by ppf_BB, BABIP by ppf_BABIP, ISO by (1-w)*ppf_2B3B + w*ppf_HR, w = league-season share of ISO bases from HR, 3HR/(2B+2*3B+3HR)). MLB: team-stint pf_ half-home (1+pf)/2, same ISO blend per season, denominator-weighted to player-season.
+Pairs: same player-season, >=50 PA at lower row (player x level x league) and at the upper level (aggregated over leagues; MLB aggregated over teams). w = harmonic mean of PAs (all components use this weight; pair also needs both rates non-NaN). raw_factor = sum(w*upper)/sum(w*lower). Shrinkage: league-season -> level-season -> level-all: factor = (W*raw + k*parent)/(W+k), W = summed pair weight, k = mean(W)*(1-r)/r with r = corr of adjacent-season deviations from parent (2019/2021 adjacent), r capped .95; if r<=0.05 or <15 adjacent pairs, fixed k=20000 pair-weight (only ISO level-season). Chain: MLE = neutral * own league-season factor * level-season factors of each higher level through aaa->mlb of the SAME season (zero-pair cells, e.g. no data, fall back to the parent through W=0). Regression (S6): reg = (n*MLE + k*prior)/(n+k), n = PA (K, BB), AB (ISO), BIP (BABIP); k = 60, 120, 160, 820 (FanGraphs stabilization points); prior = denominator-weighted mean MLE of that level-season (all affiliated leagues).
+k values (k, r): league->level-season K 7347 (.54), BB 27704 (.24), ISO 6485 (.57), BABIP 25069 (.26); level-season->level-all K 56722 (.28), BB 21889 (.50), ISO 20000 (fixed, r .03), BABIP 170221 (.12).
+
+### data/translation_factors.parquet
+Grain from_level (a, a+, aa, aaa; factor goes to the next level, aaa goes to mlb) x league_id x season x component (K, BB, ISO, BABIP). 1,216 rows. league_id = -1 means pooled over leagues (level-season rows have season>0; level-all rows have season = 0). n_pairs int, pair_weight float (sum of harmonic-mean weights), raw_factor (NaN when no pairs), factor (shrunk; level-all factor = raw). Pooled all-years factors: aaa->mlb K 1.248, BB 0.753, ISO 0.728, BABIP 0.873. Per-league-season n_pairs (K): min/median a 38/56, a+ 20/40, aa 21/44, aaa 46/75.5; level-season: a 92/122, a+ 106/131, aa 106/131, aaa 107/166.
+
+### data/mle.parquet
+Grain player_id x season x level x league_id (affiliated A..AAA, non-pitcher; 64,369 rows). PA, AB, BIP, neutral_{K,BB,ISO,BABIP}, mle_*, reg_* (NaN where denominator is 0). No wOBA proxy.
+
+### data/mle_player_season.parquet
+Grain player_id x season: PA (total across levels), highest_level, mle_* and reg_* (denominator-weighted across rows).
+
+### Out-of-sample (AAA s >=200 PA, MLB s+1 >=200 PA, n=986): RMSE raw AAA rate vs reg_ MLE
+K .0557 vs .0449, BB .0370 vs .0237, ISO .0661 vs .0522, BABIP .0543 vs .0446 (MLE wins 4/4). Caveat: factors are fit on all years including s+1 level-all pairs (minor leakage); MLE beating raw is largely the level-bias correction.
+
+### Quirks
+2020 has no MiLB; 2026 factors come from 2026 pairs (full season in data). Player with several leagues at one level pairs each league row with the aggregated upper level.
+
+### Spec deviations
+none.
