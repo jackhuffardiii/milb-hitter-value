@@ -139,3 +139,23 @@ Highest-level rates for stat train_era reached_mlb: a .21, a+ .21, aa .32, aaa .
 
 ### Spec deviations
 none.
+
+## B6 - Models (S7, S8, A6, A7, A3)
+
+Run: `python run.py b6` (module `pipeline/b6_models.py`; tests `.venv/bin/pytest tests/test_b6.py -q`). ~45 s. Needs B5 + war_target. Env note: Mac wheel of lightgbm needs libomp; none installed system-wide, so the venv copy was patched (`install_name_tool -add_rpath .venv/.../sklearn/.dylibs lightgbm/lib/lib_lightgbm.dylib` then `codesign --force --sign -`). Redo after a fresh venv, or `brew install libomp`. Added to requirements.txt: scikit-learn, lightgbm, shap, joblib, scipy.
+
+Reusable API (B11): `fit_stat(train_df, cfg)`, `predict_stat(models, df)` (df = features.parquet rows; returns p_mlb, war_mean, war_q10/50/90, eta_mean, eta_q10/q90, ev_war, low_confidence, index = df index), `fit_prior`, `predict_prior`, `drivers(models, df, 'p_mlb'|'war')`. Fitted models: `data/models/{stat,prior}_{backtest,final}.joblib` (dict: p_mlb, war, eta estimators, *_q quantile models keyed 0.1/0.5/0.9, cols, cfg). Swap ISO/BABIP inputs by editing reg_/blend_/delta_ columns of the frame passed to predict_stat.
+
+Design: features = STAT_NUM + one-hot STAT_CATS (bats, highest_level, milb_pos), PA counts log1p'd; no draft features. Linear: median impute (+missing indicators) + standardize; LightGBM num_leaves 15, lr .03, min_child 50, n_estimators = mean best_iter (early stopping on 20% group holdout inside each GroupKFold(5) fold) x1.1. Training sets: WAR rows = reached, war_target.censored False, pre2005 False; ETA rows = reached. Selection data = stat train_era s<=2012; same choice used for both fits. 'backtest' fit trains s<=2012, predicts stat+prior 2013-2017; 'final' trains s<=2017, predicts censored 2018-2025 + score 2026.
+
+### data/predictions.parquet (grain player_id x season x fit; 43,365 rows: backtest 7,592 stat + 9,417 prior; final 12,466 stat + 13,890 prior)
+player_id, season, group (stat|prior), fit (backtest|final), p_mlb, war_mean, war_q10/q50/q90 (sorted), eta_mean, eta_q10/q90 (>=0), ev_war = p_mlb*war_mean, low_confidence (True for prior), chosen_p_mlb / chosen_war / chosen_eta ('linear'|'lightgbm' for stat; prior always 'linear'). Prior WAR/ETA ranges are mean + empirical residual quantiles.
+### data/drivers.parquet (stat rows only: backtest 2013-2017 and final 2026 score)
+player_id, season, fit, target (p_mlb: log-odds contribution; war: wins), feature, feature_value (raw, imputed), contribution, rank (1-5 by |contribution|). Long format.
+### data/b6_metrics.json
+cv_stat (OOF log loss / RMSE / Poisson deviance per candidate + lgb n_estimators), chosen_stat, holdout_stat and holdout_prior (2013-2017 backtest fit: logloss, brier, auc, calibration deciles, war_rmse, eta_rmse, spearman_ev_vs_realized, spearman_war_reached_only, war_q10_q90_coverage), cv_prior.
+
+### Quirks / spec deviations
+- S8: signing_bonus is NaN for all draft years <= 2016 (B1 bonus coverage), so log_bonus is dropped by the imputer in prior training; prior models effectively use round, pick, international, age, level, PA, years since draft.
+- Linear WAR ridge is chosen (ties LightGBM within CV noise) and leans on age heavily for young players (age coefficient contributes +3 to +4.5 WAR for 19-year-olds); its ranges (q10 ~ -0.4) come from the quantile LightGBMs.
+- C4 calibration: see final report; holdout deciles 6-8 are under-predicted by 5-8.5 points (reach rate in 2013-2017 snapshots exceeds the 2005-2012 training rate).
