@@ -206,3 +206,13 @@ Same grain/columns as predictions/drivers (fit=='final') plus s14_applied bool, 
 ### Quirks / Spec deviations
 - D2/Q11: repo PBP not used; all batted balls come from Savant (D11/Q13) 2021-2026, Low-A is FSL parks only, AAA full from 2023 (2022 partial, ~41k BIP), none for AAA 2021.
 - Only AAA and Low-A tracked; 2026 rows are 2026 Apr-Sep.
+
+## B13 - Baserunning in oWAR (S4, C1)
+
+Run: `python run.py b2` (same module `pipeline/b2_war.py`). owar = (bat + park + bsr + pos + repl)/RPW, bsr_runs = wSB + gidp_runs. New columns in `data/mlb_war.parquet`: wSB, gidp_runs, bsr_runs (float). `data/linear_weights.parquet` gains runCS, lg_wSB, lg_GIDP_per_PA. `war_target` recomputes from the new owar (raw sum, no floor). Downstream (b5/b6/b7/b11) is not rerun.
+- wSB (FanGraphs form): runSB 0.2, runCS = -(2*lgR/lg_outs + 0.075), lg_wSB = (lgSB*runSB + lgCS*runCS)/lg(1B+BB+HBP-IBB), wSB = SB*runSB + CS*runCS - lg_wSB*(1B+BB+HBP-IBB). League totals from the Stats API team totals (same as linear weights).
+- GIDP runs (approximation): -0.37*(GIDP - lg_GIDP_per_PA*PA). True DP opportunities (runner on 1st, <2 outs) need MLB play-by-play, which is not pulled.
+- GIDP source: mlb_seasons lacks it; b2 `_gidp()` calls `api_get("stats", stats="season", group="hitting", sportId=1, season, teamId, playerPool="All", limit=5000)`, the exact B1 params: 660/660 team-seasons cache hits (100%), zero new network calls.
+- C1 (300+ PA, n=5,747): r vs bWAR WAR 0.8505 -> 0.8631; r vs (runs_bat+runs_br+runs_dp+runs_position+runs_replacement)/RPW 0.9773 (old def, no br/dp) -> 0.9689 (new def); r bsr_runs vs bWAR (runs_br+runs_dp) = 0.7627.
+- Known data issue (B1, not fixed): mlb_seasons totals for 2024 and 2025 are 2-4% short of Stats API team totals (2024 H 38,994 vs 39,823; SB 3,546 vs 3,617). League wSB over all hitters sums to 0 for every other season, but 5.9 runs in 2024, 1.0 in 2025. This also means bat_runs in those seasons use incomplete player rows. Non-pitcher wSB sums are > 0 pre-2022 because pitcher hitters (negative wSB) are dropped.
+- Spec deviations: none (GIDP is the documented approximation).

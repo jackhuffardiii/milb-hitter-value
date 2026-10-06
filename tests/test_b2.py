@@ -53,3 +53,18 @@ def test_c1_bwar_correlation():
     # elite glove / light bat: Andrelton Simmons 2017 (player_id 592743) oWAR well below bWAR
     s = j[(j.player_id == 592743) & (j.season == 2017)]
     assert len(s) == 1 and s.owar.iloc[0] < s.WAR.iloc[0] - 2
+
+
+def test_bsr_present_and_league_wsb_zero():
+    assert W.bsr_runs.notna().all() and W.wSB.notna().all()
+    # wSB sums to 0 over ALL hitters (incl. pitchers, who are dropped from mlb_war). 2024-25 excluded: mlb_seasons
+    # (B1) is ~2-4% short of the Stats API team totals in those seasons (see handoff B13).
+    M = pd.read_parquet(DATA / "mlb_seasons.parquet").merge(LW, on="season")
+    M["w"] = (M.SB * 0.2 + M.CS * M.runCS
+              - M.lg_wSB * (M.H - M["2B"] - M["3B"] - M.HR + M.BB + M.HBP - M.IBB))
+    g = M[M.season != 2024].groupby("season").w.sum()
+    assert g.drop(2025).abs().max() < 1 and abs(g[2025]) < 2
+
+
+def test_acuna_2023_wsb():
+    assert W[(W.player_id == 660670) & (W.season == 2023)].wSB.iloc[0] > 5
