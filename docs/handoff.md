@@ -275,3 +275,11 @@ weight_lb and bmi leak post-snapshot information (MLB players' listed weights ar
 | body (height only) | 0.4261 | 0.1581 | yes (Spearman +0.0023, logloss -0.0008 within tol) |
 | all kept (11 features) | 0.4142 | 0.1561 | yes |
 Body gain from 0.0133 Spearman / 0.0145 logloss collapses to noise once weight/bmi are removed, confirming look-ahead; height kept per the rule. Holdout untouched.
+
+
+## B6r - refit with A12 selection and S15 features; B11, B7 rerun (A12, S15, C2, C3, C4)
+
+Run: `python run.py b6 b11 b7` (~2 min). Code: `stat_X(df, extra=())` in `pipeline/b6_models.py` is the single design-matrix builder (log1p on `LOG_EXTRA` = games_at_current_level, ascent_pace); models use `_X(df) = stat_X(df, S15_KEPT)` (11 features: speed, posmix, pace, height_in); `b12_select._X` delegates to `stat_X` (moved from b12 to avoid a b6<->b12 import cycle). A12: WAR mean model chosen by OOF Spearman vs realized war_6yr among reached non-censored non-pre2005 rows, GroupKFold(5), s<=2012 (`b6_metrics.json` cv_stat.war.spearman_*). P(MLB)/ETA selection unchanged (log loss / Poisson deviance); recency Platt/isotonic calibration unchanged; quantile LightGBMs unchanged.
+CV (s<=2012): P(MLB) logloss linear 0.4630 / lightgbm 0.4142 -> lightgbm. WAR Spearman ridge 0.3354 / lightgbm 0.3084 (RMSE 4.170 / 4.140) -> ridge (linear). ETA deviance 0.9112 / 0.8347 -> lightgbm.
+Holdout 2013-2017 (stat, n=7,592): logloss 0.4028, AUC 0.8849, ev Spearman 0.2162, WAR reached-only Spearman 0.3712; C4 fails deciles 7 (-5.7) and 8 (-5.1 points). C3 (n=7,488 excl. censored): model logloss 0.3886 vs 0.5360 naive, Spearman 0.2162 vs 0.1926. C2 pooled (n=264): model 0.248 vs Pipeline list 0.386, diff -0.138, 90% CI [-0.259, -0.018] (model worse than the list). B11 C8: a_pass true, b_pass false, s14_pass false (S14 not applied).
+Driver sign check (2026 top 15 by ev_war), ridge WAR: age and age_vs_level carry opposite-signed contributions and p_C / pos_share_C offset each other (-1.97 / +1.76); blend_K and reg_K offset (e.g. -3.11 / +1.99): collinear linear terms, individually baseball-implausible, net sensible. Do not read single linear drivers in isolation.

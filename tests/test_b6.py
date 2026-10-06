@@ -47,3 +47,12 @@ def test_c4_calibration_within_5_points():
     m = json.loads((DATA / "b6_metrics.json").read_text())
     gaps = [c["gap"] for c in m["holdout_stat"]["calibration"]]
     assert max(abs(g) for g in gaps) <= 0.05, gaps
+
+
+def test_war_chosen_by_spearman_and_s15_cols():
+    m = json.loads((DATA / "b6_metrics.json").read_text())
+    c = m["cv_stat"]["war"]
+    assert m["chosen_stat"]["war"] == ("lightgbm" if c["spearman_lightgbm"] > c["spearman_linear"] else "linear")  # A12
+    import joblib
+    cols = joblib.load(DATA / "models" / "stat_final.joblib")["cols"]
+    assert "height_in" in cols and not {"weight_lb", "bmi"} & set(cols)  # S15, Q15

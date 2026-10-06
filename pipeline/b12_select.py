@@ -18,14 +18,10 @@ from .b6_models import _lgb_cv, _linear, _predict, stat_X
 from .common import DATA
 
 LL_TOL, SP_TOL = 0.002, 0.005
-LOG_EXTRA = ["games_at_current_level", "ascent_pace"]
 
 
 def _X(df, cols):
-    X = stat_X(df)
-    for c in cols:
-        X[c] = np.log1p(df[c].to_numpy(float)) if c in LOG_EXTRA else df[c].astype(float).to_numpy()
-    return X
+    return stat_X(df, cols)
 
 
 def evaluate(df, cols, wt):

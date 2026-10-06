@@ -25,6 +25,7 @@ from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from pipeline.b5_features import S15_KEPT
 from pipeline.common import DATA
 
 warnings.filterwarnings("ignore", message="Skipping features without any observed values")  # log_bonus is all-NaN pre-2017
@@ -39,14 +40,24 @@ LGB = dict(num_leaves=15, learning_rate=0.03, min_child_samples=50, random_state
 
 
 # ---------- design matrices ----------
-def stat_X(df):
+LOG_EXTRA = ["games_at_current_level", "ascent_pace"]  # skewed S15 counts, log1p like LOG_COLS (also used by B12)
+
+
+def stat_X(df, extra=()):
+    """Baseline stat features + `extra` S15 columns (B12 evaluates groups; models use `_X` = S15_KEPT)."""
     X = df[STAT_NUM].astype(float).copy()
     for c in LOG_COLS:
         X[c] = np.log1p(X[c])
+    for c in extra:
+        X[c] = np.log1p(df[c].to_numpy(float)) if c in LOG_EXTRA else df[c].astype(float).to_numpy()
     for col, cats in STAT_CATS.items():
         for v in cats:
             X[f"{col}={v}"] = (df[col] == v).astype(float)
     return X.reset_index(drop=True)
+
+
+def _X(df):
+    return stat_X(df, S15_KEPT)
 
 
 def prior_X(df):
@@ -127,16 +138,21 @@ def _targets(df):
 
 def select_stat(train):
     """CV candidate comparison on `train`; returns cfg with chosen model name and LightGBM n_estimators per target."""
-    X, tg, g = stat_X(train), _targets(train), train.player_id.to_numpy()
+    X, tg, g = _X(train), _targets(train), train.player_id.to_numpy()
     cfg, cv = {}, {}
     for t in ("p_mlb", "war", "eta"):
         m, y = tg[t]
         Xm, ym, gm = X[m].reset_index(drop=True), y[m], g[m]
-        lin = _metric(t, ym, _lin_cv(t, Xm, ym, gm))
+        lo = _lin_cv(t, Xm, ym, gm)
         oof, n = _lgb_cv(t, Xm, ym, gm)
-        gbm = _metric(t, ym, oof)
+        lin, gbm = _metric(t, ym, lo), _metric(t, ym, oof)
         cv[t] = {"linear": lin, "lightgbm": gbm, "n_rows": int(m.sum()), "lgb_n_estimators": n}
-        cfg[t] = {"chosen": "lightgbm" if gbm < lin else "linear", "n": n}
+        better = gbm < lin
+        if t == "war":  # A12: rank quality of E[WAR | reached] (Spearman OOF), not RMSE
+            sl, sg = float(spearmanr(lo, ym)[0]), float(spearmanr(oof, ym)[0])
+            cv[t].update(spearman_linear=sl, spearman_lightgbm=sg)
+            better = sg > sl
+        cfg[t] = {"chosen": "lightgbm" if better else "linear", "n": n}
     for t in ("war", "eta"):  # quantile iteration counts
         m, y = tg[t]
         Xm, ym, gm = X[m].reset_index(drop=True), y[m], g[m]
@@ -170,7 +186,7 @@ def _logit(p):
 def fit_recal(train, cfg, recent=3):
     """OOF P(MLB) (GroupKFold by player) on all train rows; recalibrate on the last `recent` training seasons only.
     Isotonic vs Platt chosen by group-CV log loss on those recent OOF rows (holdout-free)."""
-    X, y, g = stat_X(train), train.reached_mlb.astype(int).to_numpy(), train.player_id.to_numpy()
+    X, y, g = _X(train), train.reached_mlb.astype(int).to_numpy(), train.player_id.to_numpy()
     oof = np.zeros(len(y))
     for tr, te in GroupKFold(5).split(X, y, g):
         m = _lgb("p_mlb", cfg["p_mlb"]["n"]) if cfg["p_mlb"]["chosen"] == "lightgbm" else _linear("p_mlb")
@@ -189,7 +205,7 @@ def fit_recal(train, cfg, recent=3):
 
 # ---------- stat fit / predict ----------
 def fit_stat(train, cfg):
-    X, tg = stat_X(train), _targets(train)
+    X, tg = _X(train), _targets(train)
     mod = {"cfg": cfg, "cols": list(X.columns)}
     mod["recal"], mod["recal_info"] = fit_recal(train, cfg)
     for t in ("p_mlb", "war", "eta"):
@@ -208,7 +224,7 @@ def _sorted_q(mod, key, X, lo=None):
 
 
 def predict_stat(mod, df, calibrate=True):
-    X = stat_X(df)[mod["cols"]]
+    X = _X(df)[mod["cols"]]
     out = pd.DataFrame(index=df.index)
     out["p_mlb"] = _predict(mod["p_mlb"], X, "p_mlb")
     if calibrate:
@@ -252,7 +268,7 @@ def predict_prior(mod, df):
 def drivers(mod, df, target, top=5):
     """Long-format top-`top` contributions per row for target 'p_mlb' (log-odds) or 'war' (wins)."""
     import shap
-    X = stat_X(df)[mod["cols"]]
+    X = _X(df)[mod["cols"]]
     est = mod[target if target == "p_mlb" else "war"]
     if hasattr(est, "steps"):
         imp, sc, lin = est.steps[0][1], est.steps[1][1], est.steps[2][1]
