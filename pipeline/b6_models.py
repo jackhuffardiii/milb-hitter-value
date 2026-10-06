@@ -18,6 +18,7 @@ import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 from scipy.stats import spearmanr
 from sklearn.impute import SimpleImputer
+from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression, PoissonRegressor, RidgeCV
 from sklearn.metrics import brier_score_loss, log_loss, mean_poisson_deviance, roc_auc_score
 from sklearn.model_selection import GroupKFold, GroupShuffleSplit
@@ -32,8 +33,7 @@ QS = [0.1, 0.5, 0.9]
 LOG_COLS = ["PA_s", "PA_highest", "career_milb_pa"]
 STAT_NUM = (["level_num", "age", "age_vs_level", "pro_years", "p_C", "p_SS", "p_CF", "exp_pos_runs"] + LOG_COLS
             + [f"{k}_{c}" for k in ("reg", "blend", "delta") for c in ("K", "BB", "ISO", "BABIP")])
-STAT_CATS = {"bats": ["L", "R", "S"], "highest_level": ["a", "a+", "aa", "aaa"],
-             "milb_pos": ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH", "OF", "IF"]}
+STAT_CATS = {"bats": ["L", "R", "S"], "highest_level": ["a", "a+", "aa", "aaa"]}  # raw MiLB position dummies removed (A6): position enters via exp_pos_runs, p_C, p_SS, p_CF
 PRIOR_NUM = ["round_num", "pick_overall", "log_bonus", "international", "age", "level_num", "log_PA", "years_since_draft"]
 LGB = dict(num_leaves=15, learning_rate=0.03, min_child_samples=50, random_state=0, verbose=-1)
 
@@ -144,10 +144,54 @@ def select_stat(train):
     return cfg, cv
 
 
+# ---------- recency recalibration of P(MLB) (C4) ----------
+class Recal:
+    """Monotone map of raw P(MLB). kind 'isotonic' or 'platt' (logistic on logit p)."""
+
+    def __init__(self, kind):
+        self.kind = kind
+
+    def fit(self, p, y):
+        if self.kind == "isotonic":
+            self.m = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(p, y)
+        else:
+            self.m = LogisticRegression(C=1e6).fit(_logit(p)[:, None], y)
+        return self
+
+    def predict(self, p):
+        return self.m.predict(p) if self.kind == "isotonic" else self.m.predict_proba(_logit(p)[:, None])[:, 1]
+
+
+def _logit(p):
+    p = np.clip(p, 1e-4, 1 - 1e-4)
+    return np.log(p / (1 - p))
+
+
+def fit_recal(train, cfg, recent=3):
+    """OOF P(MLB) (GroupKFold by player) on all train rows; recalibrate on the last `recent` training seasons only.
+    Isotonic vs Platt chosen by group-CV log loss on those recent OOF rows (holdout-free)."""
+    X, y, g = stat_X(train), train.reached_mlb.astype(int).to_numpy(), train.player_id.to_numpy()
+    oof = np.zeros(len(y))
+    for tr, te in GroupKFold(5).split(X, y, g):
+        m = _lgb("p_mlb", cfg["p_mlb"]["n"]) if cfg["p_mlb"]["chosen"] == "lightgbm" else _linear("p_mlb")
+        oof[te] = _predict(m.fit(X.iloc[tr], y[tr]), X.iloc[te], "p_mlb")
+    r = (train.season >= train.season.max() - recent + 1).to_numpy()
+    po, yo, go = oof[r], y[r], g[r]
+    ll = {}
+    for kind in ("isotonic", "platt"):
+        cv = np.zeros(len(yo))
+        for tr, te in GroupKFold(5).split(po, yo, go):
+            cv[te] = Recal(kind).fit(po[tr], yo[tr]).predict(po[te])
+        ll[kind] = log_loss(yo, np.clip(cv, 1e-4, 1 - 1e-4))
+    kind = min(ll, key=ll.get)
+    return Recal(kind).fit(po, yo), {"kind": kind, "cv_logloss": ll, "n_rows": int(r.sum())}
+
+
 # ---------- stat fit / predict ----------
 def fit_stat(train, cfg):
     X, tg = stat_X(train), _targets(train)
     mod = {"cfg": cfg, "cols": list(X.columns)}
+    mod["recal"], mod["recal_info"] = fit_recal(train, cfg)
     for t in ("p_mlb", "war", "eta"):
         m, y = tg[t]
         Xm, ym = X[m], y[m]
@@ -163,10 +207,12 @@ def _sorted_q(mod, key, X, lo=None):
     return np.clip(q, lo, None) if lo is not None else q
 
 
-def predict_stat(mod, df):
+def predict_stat(mod, df, calibrate=True):
     X = stat_X(df)[mod["cols"]]
     out = pd.DataFrame(index=df.index)
     out["p_mlb"] = _predict(mod["p_mlb"], X, "p_mlb")
+    if calibrate:
+        out["p_mlb"] = np.clip(mod["recal"].predict(out.p_mlb.to_numpy()), 0, 1)
     out["war_mean"] = _predict(mod["war"], X, "war")
     out[["war_q10", "war_q50", "war_q90"]] = _sorted_q(mod, "war_q", X)
     out["eta_mean"] = _predict(mod["eta"], X, "eta")
@@ -277,8 +323,10 @@ def main():
         preds.append(pd.concat([tgt[["player_id", "season", "group"]], p], axis=1).assign(fit=name))
         for t in ("p_mlb", "war"):
             drv.append(drivers(mod, drv_rows, t).assign(fit=name))
+        metrics.setdefault("recal", {})[name] = mod["recal_info"]
         if name == "backtest":
             metrics["holdout_stat"] = holdout_metrics(tgt, p)
+            metrics["holdout_stat_uncalibrated"] = holdout_metrics(tgt, predict_stat(mod, tgt, calibrate=False))
 
     # S8 prior: CV (linear only, logistic/ridge/Poisson) on s<=2012 for reference, then the same two fits
     ptr = pr[(pr.split == "train_era") & (pr.season <= 2012)]
