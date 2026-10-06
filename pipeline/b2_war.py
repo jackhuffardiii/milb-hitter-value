@@ -67,24 +67,9 @@ def linear_weights():
 
 
 def _gidp():
-    """player-season GIDP (mlb_seasons lacks it): b1's exact per-team MLB hitting pull, so the cache hits."""
-    jobs = [(y, t["id"]) for y in YEARS for t in api_get("teams", sportId=1, season=y)["teams"]]
-    n_hit = sum(_cache_file("stats", **_gp(y, t)).exists() for y, t in jobs)
-    print(f"GIDP pull: {n_hit}/{len(jobs)} team-seasons cached ({n_hit / len(jobs):.1%} hit)")
-    res = pmap(lambda a: api_get("stats", **_gp(*a))["stats"], jobs)
-    rows = [{"player_id": sp["player"]["id"], "season": y, "GIDP": sp["stat"].get("groundIntoDoublePlay", 0)}
-            for (y, _), st in zip(jobs, res) if st for sp in st[0]["splits"]]
-    return pd.DataFrame(rows).groupby(["player_id", "season"], as_index=False).GIDP.sum()
-
-
-def _gp(y, t):  # identical to pipeline.b1_data._team_stats(1, y, t, "hitting")
-    return dict(stats="season", group="hitting", sportId=1, season=y, teamId=t, playerPool="All", limit=5000)
-
-
-def _cache_file(path, **params):
-    import hashlib, json
-    from pipeline.common import STATSAPI_CACHE
-    return STATSAPI_CACHE / (hashlib.sha1(json.dumps([path, sorted(params.items())], default=str).encode()).hexdigest() + ".json")
+    """player-season GIDP: b1 carries it on mlb_seasons (includes the S3 re-pulled stints)."""
+    m = pd.read_parquet(DATA / "mlb_seasons.parquet")
+    return m.groupby(["player_id", "season"], as_index=False).GiDP.sum().rename(columns={"GiDP": "GIDP"})
 
 
 def war():

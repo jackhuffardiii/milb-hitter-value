@@ -165,10 +165,40 @@ def aggregate_stints(d):
 
 
 # ---------- MLB ----------
+def _league_totals(season):
+    """League-wide season rows (one per player, stats summed across teams): the completeness reference."""
+    d = api_get("stats", stats="season", group="hitting", sportId=1, season=season, playerPool="All", limit=5000)
+    return {s["player"]["id"]: s["stat"]["plateAppearances"] for s in d["stats"][0]["splits"]}
+
+
+def _person_splits(args):
+    pid, season = args
+    d = api_get(f"people/{pid}/stats", stats="season", group="hitting", season=season, sportId=1)
+    return [s for s in d["stats"][0]["splits"] if s.get("team")] if d["stats"] else []
+
+
+def _fill_missing_stints(rows, season, teams):
+    """S3: the per-team pull omits some traded-away players' stints at their old team (e.g. 2024
+    De La Cruz at MIA). Where a player's team rows sum to fewer PA than the league-wide row,
+    replace their rows with the player's own per-team splits."""
+    have = {}
+    for r in rows:
+        have[r["player_id"]] = have.get(r["player_id"], 0) + (r["PA"] or 0)
+    bad = {p for p, pa in _league_totals(season).items() if have.get(p, 0) != pa}
+    fixed = [r for r in rows if r["player_id"] not in bad]
+    for splits in pmap(_person_splits, [(p, season) for p in sorted(bad)]):
+        for r in _api_split_rows(splits, "mlb"):
+            r["team_abv"] = teams.get(r["team_id"])
+            fixed.append(r)
+    print(f"MLB {season}: {len(bad)} players re-pulled for missing stints")
+    return fixed
+
+
 def mlb_hitting_fielding():
     hit, fld = [], []
     for y in MLB_YEARS:
         teams = _teams(1, y)
+        n0 = len(hit)
         jobs = [(1, y, t, g) for t in teams for g in ("hitting", "fielding")]
         for (_, _, t, g), splits in zip(jobs, pmap(_team_stats, jobs)):
             if g == "hitting":
@@ -182,9 +212,10 @@ def mlb_hitting_fielding():
                                 "position": s["position"]["abbreviation"], "games": st.get("games"),
                                 "games_started": st.get("gamesStarted"),
                                 "innings": float(str(st.get("innings", 0) or 0).replace(",", ""))})
+        hit[n0:] = _fill_missing_stints(hit[n0:], y, teams)
     h = pd.DataFrame(hit).drop(columns=["level"])
     h = h.groupby(["player_id", "season", "team_id"], as_index=False).agg(
-        {**{c: (lambda s: s.sum(min_count=1)) for c in COUNTS}, "league_id": "first", "league_name": "first",
+        {**{c: (lambda s: s.sum(min_count=1)) for c in COUNTS + ["GiDP"]}, "league_id": "first", "league_name": "first",
          "team_abv": "first", "position": "first"})
     f = pd.DataFrame(fld).groupby(["player_id", "season", "position"], as_index=False)[
         ["games", "games_started", "innings"]].sum()

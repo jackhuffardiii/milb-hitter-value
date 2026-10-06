@@ -84,3 +84,30 @@ def test_s15_swings_and_types():
     assert {"pos_g_SS", "pos_g_CF", "pos_g_C"} <= set(milb.columns)
     assert players.height_in.dropna().between(55, 90).all() and players.weight_lb.dropna().between(100, 400).all()
     assert players.height_in.notna().mean() > 0.9
+
+
+# S3: player rows must add up to the Stats API team totals (the per-team pull once dropped traded-away stints)
+STAT = {"H": "hits", "HR": "homeRuns", "BB": "baseOnBalls", "SO": "strikeOuts", "SB": "stolenBases"}
+
+
+def _api_totals(sport, season):
+    from pipeline.common import api_get
+    d = api_get("teams/stats", stats="season", group="hitting", season=season, sportId=sport, gameType="R", limit=100)
+    return {c: sum(s["stat"][k] for s in d["stats"][0]["splits"]) for c, k in STAT.items()}
+
+
+def _check_totals(df, sport, season):
+    got, want = df[list(STAT)].sum(), _api_totals(sport, season)
+    bad = {c: (int(got[c]), want[c]) for c in STAT if abs(got[c] - want[c]) > 0.005 * want[c]}
+    assert not bad, f"{sport}/{season} player sums vs API team totals (got, want): {bad}"
+
+
+@pytest.mark.parametrize("season", range(2005, 2027))
+def test_mlb_matches_api_team_totals(season):
+    _check_totals(mlb[mlb.season == season], 1, season)
+
+
+@pytest.mark.parametrize("season,level,sport", [(y, lv, sp) for y in (2025, 2026)
+                                                for lv, sp in {"aaa": 11, "aa": 12, "a+": 13, "a": 14, "rk": 16}.items()])
+def test_milb_api_matches_team_totals(season, level, sport):
+    _check_totals(milb[(milb.season == season) & (milb.level == level)], sport, season)
