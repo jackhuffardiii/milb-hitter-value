@@ -216,3 +216,38 @@ Run: `python run.py b2` (same module `pipeline/b2_war.py`). owar = (bat + park +
 - C1 (300+ PA, n=5,747): r vs bWAR WAR 0.8505 -> 0.8631; r vs (runs_bat+runs_br+runs_dp+runs_position+runs_replacement)/RPW 0.9773 (old def, no br/dp) -> 0.9689 (new def); r bsr_runs vs bWAR (runs_br+runs_dp) = 0.7627.
 - Known data issue (B1, not fixed): mlb_seasons totals for 2024 and 2025 are 2-4% short of Stats API team totals (2024 H 38,994 vs 39,823; SB 3,546 vs 3,617). League wSB over all hitters sums to 0 for every other season, but 5.9 runs in 2024, 1.0 in 2025. This also means bat_runs in those seasons use incomplete player rows. Non-pitcher wSB sums are > 0 pre-2022 because pitcher hitters (negative wSB) are dropped.
 - Spec deviations: none (GIDP is the documented approximation).
+
+## B12 - S15 features and C9 selection (S15, C9, Q15, Q16, D12, A12 evaluation)
+
+Run: `python run.py b1 b3 b4 b5 b12` (b12 = `pipeline/b12_select.py`, also `python -m pipeline.b12_select`, ~2 min, registered after b5). Tests: `tests/test_b1.py`, `test_b5.py`, `test_b12.py`; `tests/conftest.py` adds the repo root to sys.path so tests can import `pipeline.*`.
+
+### B1 additions (`pipeline/b1_data.py`)
+- `milb_player_seasons.parquet` and `milb_stints.parquet` gain (float, summed, NaN where the source lacks them): FO, PO, LO (fly/pop/line outs), ground_hits, fly_hits, pop_hits, line_hits, GiDP. Repo (2005-2024) has all of them (coverage 100%). 2025-26 (Stats API): GiDP from `groundIntoDoublePlay`, GO/AO as before, the rest NaN.
+- `swings`, `whiffs` now filled for 2026 from the repo's refreshed 2026 files (`data/raw/milb_batting/2026_{lv}.csv`), joined player_id x team_id x level; join rate 100% of API rows and PA (5,528 of 5,528 repo rows matched); 98.5% of 2026 A-AAA rows have swings > 0. 2025 stays NaN (repo stopped 2025-05-01, API has no swings). Repo cells with swings == 0 mean untracked, so B5 treats swings <= 0 as missing.
+- `milb_player_seasons` gains pos_g_SS, pos_g_CF, pos_g_C: sum of G over stint rows whose position string lists that position (approximation: "SS/2B" counts all its G for both).
+- `players.parquet` gains height_in (float; from "6' 2\"" = 74; values outside 55-90 set NaN) and weight_lb (float; outside 100-400 NaN). Current values (Q15 look-ahead, stated on methodology page). 38,285 / 38,282 non-null of 38,303.
+
+### B5 features (`pipeline/b5_features.py`; `S15_GROUPS` dict, `S15_KEPT` list for B6r)
+All S15 columns are populated only for group 'stat' (NaN for prior). Contact/batted/speed aggregate A..AAA rows of season s over leagues; "blend_" = 3:2 weighted blend of s with s-1 (weights 3*valid PA, 2*valid PA_prev; a missing side gets weight 0, so 2021 and 2026 use the single season; 2025 snapshot is NaN for contact because 2025 has no swings).
+- contact: contact_rate = 1 - whiffs/swings; swing_rate = swings/pitches_faced; blend_contact_rate, blend_swing_rate. Non-null for 2005-2024 and 2026, all NaN for 2025 (Q16).
+- batted: gb_rate, fb_rate, ld_rate, pu_rate = (GO+ground_hits, FO+fly_hits, LO+line_hits, PO+pop_hits)/sum of the four (NaN 2025-26, no detailed types); gofb = GO/AO (all years); blend_ versions of each. Not park-adjusted.
+- speed: sb_att_rate = (SB+CS)/(1B+BB+HBP-IBB) clipped to 1; sb_success = SB/(SB+CS); triple_rate = 3B/(2B+3B). Season s only.
+- posmix: pos_share_SS, pos_share_CF, pos_share_C = pos_g_X / G at the highest level in s (clipped to 1; positions can sum above 1, approximation above).
+- pace: games_at_current_level (career G at highest level reached through s, all levels incl. rk, ladder rk<a-<a<a+<aa<aaa), ascent_pace = career G below that level / max(1, levels climbed since the first season's lowest level) (lower = faster), levels_climbed_s (distinct levels above the starting level played in s), repeated_level (float 0/1: highest level in s == highest in s-1 and >= 200 PA there; 0 if no s-1 row).
+- body: height_in, weight_lb, bmi = 703*lb/in^2.
+
+### C9 selection (`data/b12_c9.json`; train-era stat rows s <= 2012, n = 12,306; GroupKFold(5) by player; holdout 2013-2017 untouched)
+Baseline = current B6 stat features; P(MLB) = B6 LightGBM (early stopped), WAR-hat = ridge (A12 candidate; B6 itself not changed, A12 selection still B6r), ev = p * WAR-hat, realized = war_6yr if reached else 0, non-censored non-pre2005. Rule: keep if log loss or Spearman improves and neither loses more than 0.002 / 0.005.
+| group | logloss | ev Spearman | keep |
+|---|---|---|---|
+| baseline | 0.4253 | 0.1559 | |
+| contact | 0.4256 | 0.1554 | no |
+| batted | 0.4283 | 0.1540 | no |
+| speed | 0.4219 | 0.1538 | yes |
+| posmix | 0.4248 | 0.1575 | yes |
+| pace | 0.4207 | 0.1540 | yes |
+| body | 0.4112 | 0.1688 | yes |
+| all kept | 0.3967 | 0.1686 | yes |
+Kept groups: speed, posmix, pace, body (13 features, `S15_KEPT`). Contact and batted are dropped (also would be NaN for 2025-26 snapshots). Body gain is partly the Q15 look-ahead (current size of players who reached MLB is better recorded). B6 models were not refit; B6r imports `S15_KEPT` from `pipeline.b5_features`. `pipeline/b12_select.py` has `_X(df, cols)` building baseline `stat_X` plus extras (log1p on games_at_current_level and ascent_pace).
+
+Spec deviations (D12, Q16): no game-feed pull; 2026 swings/whiffs come from repo season files (refreshed 2026-10-01), 2025 contact/swing are NaN, 2026 contact uses 2026 alone (no 2-year blend, same as 2021). No other deviations.

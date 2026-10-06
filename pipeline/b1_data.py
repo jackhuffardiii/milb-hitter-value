@@ -1,10 +1,11 @@
-"""B1 data layer (spec S1, S2, S3, D1, D3, D4, D5, D6, Q4).
+"""B1 data layer (spec S1, S2, S3, S15, D1, D3, D4, D5, D6, D12, Q4, Q15, Q16).
 
 Outputs (data/): milb_player_seasons, players, draft, mlb_seasons, mlb_fielding_games (.parquet).
 Repo files cover MiLB 2005-2024 (D1); the MLB Stats API covers MiLB 2025-2026 (D3), per team so
 stints keep team and league. Rates are always recomputed from counting stats (Q4).
 """
 import json
+import re
 import time
 
 import numpy as np
@@ -28,12 +29,17 @@ REPO_COLS = {"team_id": "team_id", "team_abv": "team_abv", "team_league_id": "le
              "batting_HBP": "HBP", "batting_SO": "SO", "batting_SF": "SF", "batting_SH": "SH",
              "batting_SB": "SB", "batting_CS": "CS", "batting_GO": "GO", "batting_AO": "AO",
              "batting_pitches_faced": "pitches_faced", "batting_swings": "swings",
-             "batting_whiffs": "whiffs", "season": "season"}
+             "batting_whiffs": "whiffs", "batting_FO": "FO", "batting_PO": "PO", "batting_LO": "LO",
+             "batting_ground_hits": "ground_hits", "batting_fly_hits": "fly_hits", "batting_pop_hits": "pop_hits",
+             "batting_line_hits": "line_hits", "batting_GiDP": "GiDP", "season": "season"}
+EXTRA = ["FO", "PO", "LO", "ground_hits", "fly_hits", "pop_hits", "line_hits", "GiDP"]  # S15 out/hit types (repo 2005-2024)
+SWING_YEAR = 2026  # D12/Q16: repo 2026 files carry swings/whiffs; 2025 repo stops 2025-05, API has none -> NaN
 API_STATS = {"gamesPlayed": "G", "plateAppearances": "PA", "atBats": "AB", "hits": "H",
              "doubles": "2B", "triples": "3B", "homeRuns": "HR", "baseOnBalls": "BB",
              "intentionalWalks": "IBB", "hitByPitch": "HBP", "strikeOuts": "SO", "sacFlies": "SF",
              "sacBunts": "SH", "stolenBases": "SB", "caughtStealing": "CS", "groundOuts": "GO",
-             "airOuts": "AO", "numberOfPitches": "pitches_faced"}  # API has no swings/whiffs -> NaN
+             "airOuts": "AO", "numberOfPitches": "pitches_faced",
+             "groundIntoDoublePlay": "GiDP"}  # API has no swings/whiffs/FO/PO/LO/hit types -> NaN (2026 swings from repo)
 
 
 # ---------- MiLB stints ----------
@@ -51,6 +57,13 @@ def _repo_file(args):
     return d
 
 
+def repo_swings(season=SWING_YEAR):
+    """Repo swings/whiffs for `season`, summed to player x team x level (D12)."""
+    parts = [p for p in pmap(_repo_file, [(season, lv) for lv in LEVELS]) if p is not None]
+    d = pd.concat(parts, ignore_index=True)
+    return d.groupby(["player_id", "team_id", "level"], as_index=False)[["swings", "whiffs"]].sum(min_count=1)
+
+
 def repo_stints():
     parts = pmap(_repo_file, [(y, lv) for y in REPO_YEARS for lv in LEVELS])
     d = pd.concat([p for p in parts if p is not None], ignore_index=True)
@@ -63,7 +76,7 @@ def _api_split_rows(splits, level):
     for s in splits:
         st = s["stat"]
         r = {v: st.get(k) for k, v in API_STATS.items()}
-        r.update(swings=None, whiffs=None)
+        r.update(swings=None, whiffs=None, **{c: None for c in EXTRA if c != "GiDP"})
         r.update(season=int(s["season"]), player_id=s["player"]["id"], team_id=s["team"]["id"],
                  league_id=s.get("league", {}).get("id"), league_name=s.get("league", {}).get("name"),
                  position=s.get("position", {}).get("abbreviation"), level=level)
@@ -94,6 +107,14 @@ def api_stints(season):
     d = pd.DataFrame(rows)
     d["team_abv"] = d["team_id"].map(abv)
     d["source"] = "statsapi"
+    if season == SWING_YEAR:
+        key = ["player_id", "team_id", "level"]
+        sw = repo_swings().rename(columns={"swings": "sw_repo", "whiffs": "wh_repo"})
+        d = d.merge(sw, on=key, how="left")
+        d["swings"], d["whiffs"] = d.pop("sw_repo"), d.pop("wh_repo")
+        ok = d.swings.notna()
+        print(f"{season} swings join: {ok.mean():.3f} of API rows, {d.PA[ok].sum() / d.PA.sum():.3f} of PA; "
+              f"{len(sw)} repo rows, {int(sw.merge(d[key], on=key).shape[0])} matched")
     return d
 
 
@@ -129,7 +150,10 @@ def aggregate_stints(d):
     """Sum stints at different teams in the same league -> grain player x season x league."""
     keys = ["player_id", "season", "level", "league_id"]
     g = d.groupby(keys)
-    out = g[COUNTS].sum(min_count=1)
+    out = g[COUNTS + EXTRA].sum(min_count=1)
+    for tok in ("SS", "CF", "C"):  # S15(4): G in stint rows listing the position (strings lack per-position games)
+        has = d.position.fillna("").str.split("/").apply(lambda t, k=tok: k in t)
+        out[f"pos_g_{tok}"] = d.G.where(has, 0).groupby([d[k] for k in keys]).sum()
     out["league_name"] = g["league_name"].first()
     out["teams"] = g["team_abv"].agg(lambda s: "|".join(sorted(set(s.dropna()))))
     out["team_ids"] = g["team_id"].agg(lambda s: "|".join(str(x) for x in sorted(set(s))))
@@ -195,18 +219,28 @@ def _people(chunk):
     return api_get("people", personIds=",".join(map(str, chunk)))["people"]
 
 
+def _height_in(h):
+    """'6\' 2"' -> 74 (S15 body, Q15: current values)."""
+    m = re.match(r"(\d+)'\s*(\d+)", h or "")
+    return int(m[1]) * 12 + int(m[2]) if m else None
+
+
 def players(ids):
     ids = sorted(ids)
     res = pmap(_people, [ids[i:i + 100] for i in range(0, len(ids), 100)])
     rows = [{"player_id": p["id"], "full_name": p.get("fullName"), "birth_date": p.get("birthDate"),
              "bats": (p.get("batSide") or {}).get("code"), "throws": (p.get("pitchHand") or {}).get("code"),
              "primary_pos": (p.get("primaryPosition") or {}).get("abbreviation"),
-             "mlb_debut_date": p.get("mlbDebutDate"), "draft_year": p.get("draftYear")}
+             "mlb_debut_date": p.get("mlbDebutDate"), "draft_year": p.get("draftYear"),
+             "height_in": _height_in(p.get("height")), "weight_lb": p.get("weight")}
             for chunk in res for p in chunk]
     d = pd.DataFrame(rows).drop_duplicates("player_id").set_index("player_id").reindex(ids).reset_index()
     for c in ["birth_date", "mlb_debut_date"]:
         d[c] = pd.to_datetime(d[c], errors="coerce")
     d["draft_year"] = d["draft_year"].astype("Int64")
+    d["weight_lb"] = pd.to_numeric(d["weight_lb"], errors="coerce")
+    d["height_in"] = d["height_in"].astype(float).where(lambda x: x.between(55, 90))  # API holds 0 / junk for some
+    d["weight_lb"] = d["weight_lb"].where(lambda x: x.between(100, 400))
     return d
 
 
@@ -216,7 +250,7 @@ def main():
     repo = repo_stints()
     compare_2024(repo)
     stints = pd.concat([repo] + [api_stints(y) for y in API_MILB_YEARS], ignore_index=True)
-    stints[["player_id", "season", "level", "league_id", "team_id", "source"] + COUNTS].to_parquet(
+    stints[["player_id", "season", "level", "league_id", "team_id", "source"] + COUNTS + EXTRA].to_parquet(
         DATA / "milb_stints.parquet", index=False)  # B1 addendum: pre-aggregation frame for B3
     milb = aggregate_stints(stints)
 

@@ -56,3 +56,24 @@ def test_no_nan_war_6yr_for_reached_train_era():
     f = pd.read_parquet(DATA / "features.parquet")
     r = f[(f.split == "train_era") & f.reached_mlb]
     assert r.war_6yr.notna().all()
+
+
+def test_s15_columns_and_ranges(f):
+    from pipeline.b5_features import S15_GROUPS, S15_KEPT
+    cols = [c for g in S15_GROUPS.values() for c in g]
+    assert set(S15_KEPT) <= set(cols) and set(cols) <= set(f.columns)
+    s = f[f.group == "stat"]
+    assert f.loc[f.group == "prior", cols].isna().all().all()
+    rates = [c for c in cols if c.endswith("_rate") or c.startswith(("pos_share", "blend_")) and "gofb" not in c] + ["sb_success"]
+    for c in rates:
+        v = s[c].dropna()
+        assert len(v) > 0 and v.between(0, 1).all(), c
+    assert s.height_in.dropna().between(60, 85).all() and s.weight_lb.dropna().between(110, 320).all()
+    assert s.bmi.dropna().between(14, 45).all() and s.repeated_level.isin([0, 1]).all()
+    assert (s.ascent_pace >= 0).all() and (s.games_at_current_level >= 1).all()
+
+
+def test_contact_availability(f):
+    s = f[(f.group == "stat") & (f.highest_level.isin(["a", "a+", "aa", "aaa"]))]
+    assert s[s.season == 2026].contact_rate.notna().mean() > 0.95
+    assert s[s.season == 2025].contact_rate.isna().all()  # Q16: no 2025 swings

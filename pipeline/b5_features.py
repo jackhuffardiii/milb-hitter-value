@@ -1,4 +1,4 @@
-"""B5: model-ready snapshot table (A10, S7 features part, S8 prior population, Q5, Q7, A2, A3).
+"""B5: model-ready snapshot table (A10, S7 features part, S8 prior population, S15, Q5, Q7, Q15, Q16, A2, A3).
 
 One row per non-pitcher x offseason season s (2005-2026) who played affiliated MiLB in s (not Mexican League) and is
 rookie-eligible at end of s (career MLB AB through s < 130). group 'stat' (>=150 PA at A..AAA over s and s-1, Q7, and
@@ -16,6 +16,96 @@ POS9 = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH"]
 RATES = ["K", "BB", "ISO", "BABIP"]
 MEXICAN_LEAGUE = 125
 YEARS = range(2005, 2027)
+ORD = {"rk": 0, "a-": 1, "a": 2, "a+": 3, "aa": 4, "aaa": 5}  # ladder ordinals for progression pace
+S15_GROUPS = {
+    "contact": ["contact_rate", "swing_rate", "blend_contact_rate", "blend_swing_rate"],
+    "batted": ["gb_rate", "fb_rate", "ld_rate", "pu_rate", "gofb", "blend_gb_rate", "blend_fb_rate",
+               "blend_ld_rate", "blend_pu_rate", "blend_gofb"],
+    "speed": ["sb_att_rate", "sb_success", "triple_rate"],
+    "posmix": ["pos_share_SS", "pos_share_CF", "pos_share_C"],
+    "pace": ["games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level"],
+    "body": ["height_in", "weight_lb", "bmi"],
+}
+S15_KEPT = ["sb_att_rate", "sb_success", "triple_rate", "pos_share_SS", "pos_share_CF", "pos_share_C",
+            "games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level",
+            "height_in", "weight_lb", "bmi"]  # groups speed, posmix, pace, body kept by C9 (data/b12_c9.json); B6r imports this
+
+
+def _blend(A, cols, w):
+    """3:2 weighted blend of season s with s-1 (weights 3*w, 2*w_prev); a missing side gets weight 0."""
+    P = A[["player_id", "season", w] + cols].assign(season=A.season + 1)
+    M = A.merge(P, on=["player_id", "season"], how="left", suffixes=("", "_p"))
+    for c in cols:
+        w0, w1 = 3 * M[w].where(M[c].notna(), 0), 2 * M[w + "_p"].where(M[c + "_p"].notna(), 0)
+        M["blend_" + c] = (M[c].fillna(0) * w0 + M[c + "_p"].fillna(0) * w1) / (w0 + w1).where(lambda x: x > 0)
+    return M[["player_id", "season"] + ["blend_" + c for c in cols]]
+
+
+def s15_features(S, snap, pl):
+    """S15 features for every snapshot row (caller blanks non-stat rows). S: filtered milb seasons with `lv`.
+    Contact/batted/speed use A..AAA rows of season s only (blend adds s-1); detail rows with no data are skipped.
+    Batted-ball mix is not park-adjusted. Contact is NaN for 2025 (no swings data, Q16): 2026 uses 2026 alone."""
+    k = ["player_id", "season"]
+    H = S[S.lv >= 1]
+    # contact (swings > 0 marks real repo data; repo holds 0 where untracked)
+    c = H[H.swings > 0].groupby(k).agg(sw=("swings", "sum"), wh=("whiffs", "sum"), pf=("pitches_faced", "sum"), w_c=("PA", "sum"))
+    c["contact_rate"], c["swing_rate"] = 1 - c.wh / c.sw, c.sw / c.pf.where(c.pf > 0)
+    c = c.reset_index()
+    # batted-ball mix: detailed types where present (repo through 2024), GO/AO ratio where only that exists
+    d = H.assign(gb=H.GO + H.ground_hits, fb=H.FO + H.fly_hits, ld=H.LO + H.line_hits, pu=H.PO + H.pop_hits)
+    d["bip"] = d[["gb", "fb", "ld", "pu"]].sum(axis=1, min_count=4)
+    b = d[d.bip > 0].groupby(k)[["gb", "fb", "ld", "pu", "bip", "PA"]].sum()
+    for x in ("gb", "fb", "ld", "pu"):
+        b[x + "_rate"] = b[x] / b.bip
+    b = b.reset_index().rename(columns={"PA": "w_b"})[k + ["gb_rate", "fb_rate", "ld_rate", "pu_rate", "w_b"]]
+    g = H[(H.AO > 0) | (H.GO > 0)].groupby(k)[["GO", "AO", "PA"]].sum().reset_index()
+    g["gofb"], g["w_g"] = g.GO / g.AO.where(g.AO > 0), g.PA
+    # speed
+    H = H.assign(b1=H.H - H["2B"] - H["3B"] - H.HR)
+    sp = H.groupby(k)[["SB", "CS", "b1", "BB", "HBP", "IBB", "2B", "3B"]].sum()
+    sp["sb_att_rate"] = ((sp.SB + sp.CS) / (sp.b1 + sp.BB + sp.HBP - sp.IBB).where(lambda x: x > 0)).clip(upper=1)
+    sp["sb_success"] = sp.SB / (sp.SB + sp.CS).where(lambda x: x > 0)
+    sp["triple_rate"] = sp["3B"] / (sp["2B"] + sp["3B"]).where(lambda x: x > 0)
+    sp = sp.reset_index()[k + ["sb_att_rate", "sb_success", "triple_rate"]]
+    out = snap[k].copy()
+    for A, cols, w in [(c, ["contact_rate", "swing_rate"], "w_c"),
+                       (b, ["gb_rate", "fb_rate", "ld_rate", "pu_rate"], "w_b"), (g, ["gofb"], "w_g")]:
+        out = out.merge(A[k + cols + [w]], on=k, how="left").merge(_blend(A, cols, w), on=k, how="left").drop(columns=w)
+    out = out.merge(sp, on=k, how="left")
+    # position mix at the highest level in s: games listing the position / games (strings lack per-position games, so a
+    # player listed "SS/2B" counts all stint games for both; shares of different positions can sum above 1)
+    hl = snap[k + ["highest_level"]].merge(S, left_on=k + ["highest_level"], right_on=k + ["level"])
+    pm = hl.groupby(k)[["G", "pos_g_SS", "pos_g_CF", "pos_g_C"]].sum()
+    for t in ("SS", "CF", "C"):
+        pm[f"pos_share_{t}"] = (pm[f"pos_g_{t}"] / pm.G.where(pm.G > 0)).clip(upper=1)
+    out = out.merge(pm.reset_index()[k + [f"pos_share_{t}" for t in ("SS", "CF", "C")]], on=k, how="left")
+    # progression pace in games, through s (all levels incl. rookie ball)
+    L = S.assign(o=S.level.map(ORD), G=S.G.fillna(0))
+    cum = snap[k].merge(L[["player_id", "season", "o", "G", "PA"]], on="player_id", suffixes=("", "_l"))
+    cum = cum[cum.season_l <= cum.season]
+    top = cum.groupby(k).o.max().rename("top")
+    first = cum[cum.season_l == cum.groupby(k).season_l.transform("min")].groupby(k).o.min().rename("first")
+    cum = cum.join(top, on=k).join(first, on=k)
+    pace = pd.DataFrame({"games_at_current_level": cum[cum.o == cum.top].groupby(k).G.sum(),
+                         "below": cum[cum.o < cum.top].groupby(k).G.sum()})
+    pace["below"] = pace.below.fillna(0)
+    pace = pace.join(top).join(first)
+    pace["ascent_pace"] = pace.below / (pace.top - pace["first"]).clip(lower=1)
+    cur = cum[cum.season_l == cum.season]
+    pace["levels_climbed_s"] = cur[cur.o > cur["first"]].groupby(k).o.nunique()
+    pace["levels_climbed_s"] = pace.levels_climbed_s.fillna(0)
+    prev = cum[cum.season_l == cum.season - 1].copy()
+    ptop = prev.groupby(k).o.max().rename("ptop")
+    prev = prev.join(ptop, on=k)
+    ppa = prev[prev.o == prev.ptop].groupby(k).PA.sum().rename("ppa")
+    pace = pace.join(ptop).join(ppa)
+    pace["repeated_level"] = ((pace.top == pace.ptop) & (pace.ppa >= 200)).astype(float)
+    out = out.merge(pace.reset_index()[k + ["games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level"]],
+                    on=k, how="left")
+    # body: current values (Q15 look-ahead)
+    out = out.merge(pl[["player_id", "height_in", "weight_lb"]], on="player_id", how="left")
+    out["bmi"] = 703 * out.weight_lb / out.height_in ** 2
+    return out
 
 
 def build_transition(snap, fld, players):
@@ -104,6 +194,10 @@ def main():
         snap[f"delta_{r}"] = x0 - x1
     snap = snap.drop(columns=["pa_cur", "pa_prev", "pa_two", "mle_PA", "p_mle_PA"] + ["p_" + c for c in regc])
     snap["level_group"] = np.where(stat, np.where(snap.level_num <= 2, "low", "high"), None)
+    f15 = s15_features(S, snap, pl).drop(columns=["player_id", "season"])
+    f15[~stat.to_numpy()] = np.nan  # S15 features exist for the stat group only
+    snap = pd.concat([snap, f15], axis=1)
+
 
     # labels
     snap = snap.merge(pl[["player_id", "full_name", "mlb_debut_date"]].rename(columns={"full_name": "name"}),

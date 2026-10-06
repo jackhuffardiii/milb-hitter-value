@@ -73,3 +73,14 @@ def test_draft_full_range():
 def test_sources():
     assert set(milb[milb.season <= 2024].source) == {"repo"}
     assert set(milb[milb.season >= 2025].source) == {"statsapi"}
+
+
+def test_s15_swings_and_types():
+    s26 = milb[(milb.season == 2026) & milb.level.isin(["a", "a+", "aa", "aaa"])]
+    assert (s26.swings > 0).mean() > 0.95
+    assert milb[milb.season == 2025].swings.isna().all()
+    r = milb[milb.source == "repo"]
+    assert r[["FO", "PO", "LO", "ground_hits", "fly_hits", "pop_hits", "line_hits", "GiDP"]].notna().all().all()
+    assert {"pos_g_SS", "pos_g_CF", "pos_g_C"} <= set(milb.columns)
+    assert players.height_in.dropna().between(55, 90).all() and players.weight_lb.dropna().between(100, 400).all()
+    assert players.height_in.notna().mean() > 0.9
