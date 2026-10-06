@@ -53,3 +53,10 @@ def test_no_external_references():
     assert 'createElement("script")' not in js and "@import" not in js and "cdn" not in js.lower()
     # the only absolute URLs in JS are footer/source links (anchors), never loaded resources
     assert "fetch(\"http" not in js
+
+
+def test_run_date_in_every_export():
+    iso = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    for f in [D / "leaderboard.json", D / "method.json", D / "players" / f"{LB[0]['id']}.json"]:
+        j = json.loads(f.read_text())
+        assert iso.match(j["run_date"]) and iso.match(j["data_through"]), f

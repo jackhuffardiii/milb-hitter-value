@@ -108,6 +108,7 @@ button.btn:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surfa
 .kv dd { margin: 0; font-size: 20px; font-weight: 600; }
 .kv dd small { font-size: 13px; font-weight: 400; color: var(--ink-2); }
 .chart { display: block; width: 100%; height: auto; max-width: 100%; }
+.chart.fixed { width: auto; }
 .chart text { fill: var(--ink-2); font: 12px var(--sans); font-variant-numeric: tabular-nums; }
 .chart .strong { fill: var(--ink); }
 .chart .axis { stroke: var(--line); }

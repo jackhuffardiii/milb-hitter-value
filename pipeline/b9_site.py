@@ -32,6 +32,19 @@ def m(x):
     return r(x / 1e6, 3) if pd.notna(x) else None
 
 
+RUN_DATE = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+
+def data_through():
+    """Last game date in the 2026 Savant cache (tracked AAA/FSL games; the other 2026 sources carry season totals only)."""
+    last = ""
+    for f in sorted((DATA / "raw" / "savant").glob(f"{SEASON}-*.parquet")):
+        d = pd.read_parquet(f, columns=["game_date"])
+        if len(d):
+            last = max(last, str(d.game_date.max())[:10])
+    return last
+
+
 def dump(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, separators=(",", ":"), allow_nan=False))
@@ -110,7 +123,7 @@ def method(tm, n_players, grp_counts):
     bb = pd.read_parquet(DATA / "batted_ball.parquet")
     ms = pd.read_parquet(DATA / "milb_player_seasons.parquet")
     return dict(
-        run_date=datetime.date.today().isoformat(), season=SEASON,
+        run_date=RUN_DATE, data_through=data_through(), season=SEASON,
         C1=c1(), park_examples=park_examples(tm), translation_factors=translation_table(),
         model_choice=dict(chosen=b6["chosen_stat"], cv=b6["cv_stat"], recal=b6["recal"], cv_prior=b6["cv_prior"]),
         holdout=dict(stat=ho(b6["holdout_stat"]), stat_uncalibrated=ho(b6["holdout_stat_uncalibrated"]), prior=ho(b6["holdout_prior"])),
@@ -145,6 +158,7 @@ def main():
     dg = dg[(dg.fit == "final") & (dg.season == SEASON)]
     pt = pd.read_parquet(DATA / "position_transition.parquet")
     tm = teams()
+    THROUGH = data_through()
 
     # sort for rank and org
     v = v.sort_values("ev_surplus", ascending=False).reset_index(drop=True)
@@ -181,7 +195,7 @@ def main():
                        pos=f.milb_pos if pd.notna(f.milb_pos) else None, mlb_pos=pp[0][0] if pp else None,
                        group=x.group, low_conf=bool(x.low_confidence), p_mlb=r(x.p_mlb, 4), war=r(x.war_mean, 2),
                        eta=r(x.eta_mean, 2), ev=m(x.ev_surplus), q10=m(x.surplus_q10), q90=m(x.surplus_q90), rank=int(x.rank)))
-    dump(SITE / "leaderboard.json", dict(season=SEASON, run_date=datetime.date.today().isoformat(), rows=lb))
+    dump(SITE / "leaderboard.json", dict(season=SEASON, run_date=RUN_DATE, data_through=data_through(), rows=lb))
 
     # player cards
     pdir = SITE / "players"
@@ -234,7 +248,7 @@ def main():
         dd = dg_by.get(pid)
         pl = ply.loc[pid] if pid in ply.index else None
         card = dict(
-            id=int(pid), name=f["name"], season=SEASON, rank=int(x.rank), n_ranked=len(v),
+            id=int(pid), name=f["name"], season=SEASON, run_date=RUN_DATE, data_through=THROUGH, rank=int(x.rank), n_ranked=len(v),
             org=org_of.get(pid, (None, None))[0], team=org_of.get(pid, (None, None))[1], level=f.highest_level, age=r(f.age, 1),
             group=x.group, low_conf=bool(x.low_confidence), s14_applied=bool(x.s14_applied),
             bio=dict(bats=f.bats if pd.notna(f.bats) else None, height_in=r(f.height_in, 0), weight_lb=r(f.weight_lb, 0),

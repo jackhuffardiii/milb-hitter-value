@@ -59,7 +59,7 @@
       h("table", null, opts.caption ? h("caption", { text: opts.caption }) : null, h("thead", null, thead), h("tbody", null, body)));
   }
 
-  function chrome(page, runDate) {
+  function chrome(page, runDate, through) {
     var head = h("header", { class: "site-head" }, h("div", { class: "wrap" },
       h("a", { class: "brand", href: "index.html", text: "MiLB Hitter Value" }),
       h("span", { class: "muted", text: "Surplus dollars for every A to AAA hitter" }),
@@ -70,7 +70,7 @@
     document.body.insertBefore(h("a", { class: "skip", href: "#main", text: "Skip to content" }), document.body.firstChild);
     var L = function (u, t) { return h("a", { href: u, rel: "noopener" }, t); };
     document.body.appendChild(h("footer", { class: "site-foot" }, h("div", { class: "wrap" },
-      h("p", null, "Stats-only model by Jack Huffard; not affiliated with MLB. Run date: ", h("span", { class: "num", text: runDate || "unknown" }), "."),
+      h("p", null, "Stats-only model by Jack Huffard; not affiliated with MLB. Run date: ", h("span", { class: "num", text: runDate || "unknown" }), through ? "; data through " : "", through ? h("span", { class: "num", text: through }) : "", "."),
       h("p", null, "Data sources:"),
       h("ul", null,
         h("li", null, L("https://github.com/armstjc/milb-data-repository", "armstjc/milb-data-repository"), " (MiLB season batting 2005 to 2024)"),
@@ -85,13 +85,16 @@
   var cssv = function (n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); };
 
   /* horizontal range strip: q10 q50 q90 with optional mean marker. fmt formats ticks. */
+  /* chart width in CSS px from the page column, so text stays 12px at every viewport (C7) */
+  function cw() { var e = document.querySelector("main .wrap") || document.body; return Math.max(280, Math.min(640, Math.round(e.clientWidth - 32))); }
+
   function rangeStrip(o) {
-    var W = 420, H = 78, pad = 30;
+    var W = cw(), H = 78, pad = 30;
     var lo = Math.min(o.q10, o.mean == null ? o.q10 : o.mean, 0), hi = Math.max(o.q90, o.mean == null ? o.q90 : o.mean);
     if (hi === lo) hi = lo + 1;
     var span = hi - lo; lo -= span * .04; hi += span * .04;
     var x = function (v) { return pad + (v - lo) / (hi - lo) * (W - 2 * pad); };
-    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart", role: "img", "aria-label": o.label });
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: W, class: "chart fixed", role: "img", "aria-label": o.label });
     svg.appendChild(s("line", { x1: x(0), x2: x(0), y1: 14, y2: 50, class: "axis", "stroke-width": 1.5 }));
     if (Math.abs(x(0) - x(o.q10)) > 36) svg.appendChild(s("text", { x: x(0), y: 62, "text-anchor": "middle", text: "0" }));
     svg.appendChild(s("rect", { x: x(o.q10), y: 26, width: Math.max(1, x(o.q90) - x(o.q10)), height: 14, fill: cssv("--accent"), opacity: .28 }));
@@ -107,10 +110,10 @@
 
   function barChart(items, label, o) { /* vertical bars: items [{k, v}] */
     o = o || {};
-    var W = 420, H = 170, padL = 34, padB = 28, padT = 14, n = items.length;
+    var W = cw(), H = 170, padL = 34, padB = 28, padT = 14, n = items.length;
     var max = Math.max.apply(null, items.map(function (i) { return i.v; })) || 1;
     var bw = (W - padL - 8) / n;
-    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart", role: "img", "aria-label": label });
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: W, class: "chart fixed", role: "img", "aria-label": label });
     svg.appendChild(s("line", { x1: padL, x2: W - 8, y1: H - padB, y2: H - padB, class: "axis" }));
     [0, max / 2, max].forEach(function (t) {
       var y = H - padB - t / max * (H - padB - padT);
@@ -137,7 +140,7 @@
   function initIndex() {
     var main = document.getElementById("main");
     load("data/leaderboard.json").then(function (d) {
-      chrome("index", d.run_date);
+      chrome("index", d.run_date, d.data_through);
       var rows = d.rows, state = { key: "ev", dir: -1, shown: 100 };
       var uniq = function (k) { return Array.from(new Set(rows.map(function (r) { return r[k]; }).filter(Boolean))).sort(); };
       var sel = function (id, label, opts, fmtv) {
@@ -229,10 +232,10 @@
     var id = new URLSearchParams(location.search).get("id");
     if (!/^\d+$/.test(id || "")) { chrome("player"); main.appendChild(h("div", { class: "wrap" }, h("div", { class: "err" }, "No player selected. ", h("a", { href: "index.html", text: "Pick one from the leaderboard." })))); return; }
     load("data/players/" + id + ".json").then(function (p) {
-      return load("data/method.json").then(function (m) { return [p, m]; }, function () { return [p, null]; });
+      return [p, p];
     }).then(function (pm) {
-      var p = pm[0], runDate = pm[1] && pm[1].run_date;
-      chrome("player", runDate);
+      var p = pm[0];
+      chrome("player", p.run_date, p.data_through);
       document.title = p.name + " | MiLB Hitter Value";
       var w = h("div", { class: "wrap" }); main.appendChild(w);
       var b = p.bio;
@@ -343,7 +346,7 @@
   function initMethod() {
     var main = document.getElementById("main");
     load("data/method.json").then(function (M) {
-      chrome("method", M.run_date);
+      chrome("method", M.run_date, M.data_through);
       var w = h("div", { class: "wrap narrow prose" }); main.appendChild(w);
       var P = function (t) { return h("p", null, t); };
       var S = function (id, t) { var e = h("h2", { id: id, text: t }); return e; };
@@ -486,7 +489,7 @@
   function calibrationChart(dec) {
     var W = 360, H = 300, pad = 40, mx = Math.max.apply(null, dec.map(function (d) { return Math.max(d.predicted, d.observed); })) * 1.05;
     var x = function (v) { return pad + v / mx * (W - pad - 10); }, y = function (v) { return H - pad - v / mx * (H - pad - 10); };
-    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart", style: "max-width:420px", role: "img", "aria-label": "Predicted vs observed P(MLB) by decile, with the 5 point tolerance band" });
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: W, class: "chart fixed", role: "img", "aria-label": "Predicted vs observed P(MLB) by decile, with the 5 point tolerance band" });
     svg.appendChild(s("polygon", { points: [[0, 0.05], [mx - 0.05, mx], [mx, mx], [mx, mx - 0.05], [0.05, 0], [0, 0]].map(function (q) { return x(q[0]) + "," + y(q[1]); }).join(" "), fill: cssv("--accent"), opacity: .08 }));
     svg.appendChild(s("line", { x1: x(0), y1: y(0), x2: x(mx), y2: y(mx), class: "axis", "stroke-dasharray": "4 3" }));
     svg.appendChild(s("line", { x1: x(0), y1: y(0), x2: x(mx), y2: y(0), class: "axis" }));
