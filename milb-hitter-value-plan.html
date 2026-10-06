@@ -199,7 +199,7 @@
 <tr><td class="id-cell">D8</td><td>Preseason top-100 lists 2014–2018 (MLB Pipeline; BA paywalled)</td><td>mlb.com, matched to MLBAM IDs</td><td><code>data/manual/top100.csv</code></td></tr>
 <tr><td class="id-cell">D9</td><td>$ model parameters with citations</td><td>public sources at build time</td><td><code>data/manual/dollar_params.csv</code></td></tr>
 <tr><td class="id-cell">D11</td><td>MiLB Statcast balls in play 2021–2026 (AAA, FSL)</td><td>Baseball Savant minors CSV, per day</td><td><code>data/raw/savant/</code></td></tr>
-<tr><td class="id-cell">D12</td><td>MiLB pitch calls 2025–2026, A to AAA (contact rate)</td><td>Stats API game feeds</td><td><code>data/raw/statsapi/</code></td></tr>
+<tr><td class="id-cell">D12</td><td>MiLB swings/whiffs 2026 (contact rate)</td><td>repo season files refreshed 2026-10-01; 2025 unavailable</td><td><code>data/milb_player_seasons.parquet</code></td></tr>
 <tr><td class="id-cell">D10</td><td>Published outputs</td><td>pipeline</td><td><code>site/data/*.json</code></td></tr>
 </table></div>
 </section>
@@ -232,7 +232,7 @@
 <div class="row ask"><span class="id">Q13</span><p>Confirmed: Savant minors CSV serves AAA and FSL batted balls 2021–2026 with real event outcomes.</p></div>
 <div class="row ask"><span class="id">Q14</span><p>Cards flag when S14 was applied.<span class="why">Tracking coverage depends on organization: at Low-A, FSL affiliates only.</span></p></div>
 <div class="row ask"><span class="id">Q15</span><p>Height and weight are current values, not as of each snapshot.<span class="why">Mild look-ahead leak, stated on the methodology page.</span></p></div>
-<div class="row ask"><span class="id">Q16</span><p>If 2025–2026 pitch calls cannot be pulled, contact rate for those seasons is imputed and flagged.</p></div>
+<div class="row ask"><span class="id">Q16</span><p>2025 contact and swing rates are unavailable; the 2026 snapshot uses 2026 values alone.<span class="why">Same treatment as 2021. Avoids a ~3 GB game-feed pull for one prior season.</span></p></div>
 </section>
 <section>
 <h2>Build order</h2>

@@ -71,7 +71,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 | D8 | Preseason top-100 lists 2014 to 2018 (MLB Pipeline; BA paywalled) | hand collected from mlb.com, matched to MLBAM IDs | `data/manual/top100.csv` |
 | D9 | $ model parameters with citations | public sources at build time | `data/manual/dollar_params.csv` |
 | D11 | MiLB Statcast balls in play 2021 to 2026 (AAA, Low-A FSL), server-filtered to batted balls | Baseball Savant minors CSV, per day | `data/raw/savant/` (one parquet per day) |
-| D12 | MiLB pitch calls 2025 to 2026, all levels A to AAA (swings/whiffs for S15 contact rate) | MLB Stats API game feeds | `data/raw/statsapi/`, aggregated to player-season |
+| D12 | MiLB swings/whiffs 2026 (contact rate) | repo season files refreshed 2026-10-01; 2025 unavailable (repo stopped 2025-05, API lacks swings) | merged into `data/milb_player_seasons.parquet` |
 | D10 | Published outputs | pipeline | `site/data/*.json` |
 
 ## Success criteria
@@ -104,7 +104,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q13** Confirmed 2026-10-06: Baseball Savant minors CSV serves AAA and FSL batted balls for 2021 to 2026 with real event outcomes.
 - **Q14** Cards flag when S14 was applied, since tracking coverage depends on organization (FSL affiliates only at Low-A).
 - **Q15** Height and weight are current values from the people endpoint, not as of each snapshot. Mild look-ahead leak; stated on the methodology page.
-- **Q16** If game-feed pitch calls for 2025 to 2026 cannot be pulled, contact rate is imputed for those seasons from K% and swing-free features, flagged on cards.
+- **Q16** 2025 contact and swing rates are unavailable. The 2026 snapshot uses 2026 values alone (no 2-year blend), the same treatment as 2021. No game-feed pull (~3 GB) for one prior season.
 
 ## Build order
 
