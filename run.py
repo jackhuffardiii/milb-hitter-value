@@ -3,7 +3,7 @@ import importlib
 import sys
 
 ORDER = ["b1", "b3", "b2", "b4", "b5", "b6", "b11", "b7", "b8", "b9", "b10"]
-MODULES = {"b1": "pipeline.b1_data"}  # add each step's module here when implemented
+MODULES = {"b1": "pipeline.b1_data", "b3": "pipeline.b3_park"}  # add each step's module here when implemented
 
 if __name__ == "__main__":
     want = sys.argv[1:] or [s for s in ORDER if s in MODULES]
