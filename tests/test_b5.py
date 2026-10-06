@@ -50,3 +50,9 @@ def test_splits(f):
     assert (f[f.split == "score"].season == 2026).all()
     assert (f[f.split == "train_era"].season <= 2017).all()
     assert f.split.isin(["train_era", "censored", "score"]).all()
+
+
+def test_no_nan_war_6yr_for_reached_train_era():
+    f = pd.read_parquet(DATA / "features.parquet")
+    r = f[(f.split == "train_era") & f.reached_mlb]
+    assert r.war_6yr.notna().all()

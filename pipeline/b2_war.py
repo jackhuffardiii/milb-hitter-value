@@ -112,8 +112,10 @@ def target(w):
     m = m[(m.season >= m.debut_season) & (m.season <= m.debut_season + 5)]
     a = m.groupby("player_id").agg(war_6yr=("owar", "sum"), n_seasons_observed=("season", "nunique"))
     t = pl.drop(columns="mlb_debut_date").merge(a, on="player_id", how="left")
-    # players with no hitter-seasons (pitchers, no PA) get no row in w: war_6yr 0 / n 0 would mislead, so drop them
-    t = t[t.war_6yr.notna()]
+    # debut with no hitting PA in the window (pinch-runner/defensive sub, pitcher, or a pre-2005 debut whose window
+    # predates the data; the latter are flagged pre2005 and excluded from training) produced zero hitting value
+    t["war_6yr"] = t.war_6yr.fillna(0.0)
+    t["n_seasons_observed"] = t.n_seasons_observed.fillna(0).astype(int)
     t["censored"] = t.debut_season + 5 > 2026
     t["pre2005"] = t.debut_season < 2005
     t.to_parquet(DATA / "war_target.parquet")
