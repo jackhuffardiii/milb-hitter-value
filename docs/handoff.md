@@ -117,3 +117,25 @@ K .0557 vs .0449, BB .0370 vs .0237, ISO .0661 vs .0522, BABIP .0543 vs .0446 (M
 
 ### Spec deviations
 none.
+
+## B5 - Model-ready table (A10, S7 features, S8 prior population, Q5, Q7, A2, A3)
+
+Run: `python run.py b5` (module `pipeline/b5_features.py`; tests `.venv/bin/pytest tests/test_b5.py -q`). Seconds. Needs B1-B4 outputs.
+
+Snapshot: one row per non-pitcher (milb_player_seasons primary_pos_milb != P and players.primary_pos != P) x season s in 2005-2026 with affiliated MiLB play in s (Mexican League 125 excluded) and career MLB AB through s < 130 (mlb_seasons, 2005+ only). group 'stat' = A/A+/AA/AAA PA over s and s-1 >= 150 AND complete reg_ MLE for s (4 rates non-NaN); else 'prior'. split: train_era s<=2017, censored 2018-2025, score 2026. Counts: train_era 19,898 stat / 22,408 prior; censored 10,868 / 12,407; score 1,598 / 1,483.
+
+### data/features.parquet (grain player_id x season, 76k rows; unique key)
+- ids: player_id int, season int, name str, team str (teams of highest-level row, `|`-joined), group str (stat|prior), split str.
+- level/age: highest_level str (rk,a-,a,a+,aa,aaa), level_num float (rk 0, a- 0.5, a 1, a+ 2, aa 3, aaa 4), age float (July 1 of s), age_vs_level float (age minus PA-weighted mean age of all affiliated hitters at that level-season), bats str, milb_pos str (primary position at highest level), level_group str (stat only: low = a/a+, high = aa/aaa).
+- volume: PA_s (all affiliated levels in s), PA_highest (PA at highest level in s), career_milb_pa (affiliated MiLB PA through s, data starts 2005), pro_years (s - first MiLB season in data + 1; left-censored at 2005).
+- MLE (stat only; NaN for prior): reg_{K,BB,ISO,BABIP} (B4 reg_ rates, season s), blend_{...} (Marcel: PA*w with w=3 for s and 2 for s-1, s-1 term dropped when absent; 2021 has no s-1 since no 2020), delta_{...} = s minus s-1 (NaN if no s-1).
+- position (stat only): p_C, p_SS, p_CF (transition probabilities), exp_pos_runs (sum P * POS_RUNS per 162, imported from b2_war).
+- draft (all rows, from latest draft record with draft_year <= s): round_num (numeric; non-numeric rounds NaN), pick_overall, signing_bonus, draft_year, years_since_draft, international bool (no draft record on or before s).
+- labels: reached_mlb bool (has players.mlb_debut_date, any year), debut_year, eta_years (max(0, debut_year - s); NaN if not reached), war_6yr (war_target; NaN if not reached or absent from war_target = pitcher-only/no-PA debuts). In train_era 504 of 8,854 reached rows (224 players) lack war_6yr; B6 decides (treat as 0 or drop). war_6yr window starts at debut season, and is censored/pre2005 flagged only in war_target (not copied here).
+
+### data/position_transition.parquet
+Grain level_group (low|high) x milb_pos x mlb_pos (C,1B,2B,3B,SS,LF,CF,RF,DH): n (count), p (Laplace alpha=1, sums to 1 per level_group x milb_pos). milb_pos '_ALL' = marginal row, used as fallback for MiLB positions with no training snapshots. Built from all snapshots s<=2017 (stat and prior with highest level a..aaa) of players who reached MLB with debut >= 2005; MLB position = most fielding games (incl. DH rows, non-P) in debut..debut+2 seasons, DH if none. Leakage note: matrix is fit on the same train_era snapshots (minor; 9 positions).
+Highest-level rates for stat train_era reached_mlb: a .21, a+ .21, aa .32, aaa .60. High-level SS -> SS .751, C -> C .948, CF -> CF .436 (LF .306, RF .222).
+
+### Spec deviations
+none.
