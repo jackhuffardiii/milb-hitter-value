@@ -30,7 +30,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **S12** 2026 offseason snapshot run and published.
 - **S13** Batted-ball context on player cards: avg and 90th pct exit velocity, hard-hit rate, launch angle, barrel rate, where tracked (AAA 2023+, Low-A FSL parks 2021+). Display only; no effect on the projection.
 - **S14** Batted-ball input adjustment: for tracked AAA and Low-A FSL hitters, replace observed ISO and BABIP with expected values from EV/LA, blended toward observed by sample size, before they enter the MLE and model chain. Ships only if it passes C8.
-- **S15** Extra model features, added 2026-10-06: (1) contact rate (1 - whiffs/swings) and swing rate; (2) batted-ball mix GB%, FB%, LD%, PU% from repo out and hit types; (3) speed: SB attempt rate per time on first, triples rate; (4) position mix: share of games at SS, CF, C; (5) progression: repeated level, in-season promotion, seasons at level; (6) height and weight. Each kept only if it improves train-era CV (C9).
+- **S15** Extra model features, added 2026-10-06: (1) contact rate (1 - whiffs/swings) and swing rate; (2) batted-ball mix GB%, FB%, LD%, PU% from repo out and hit types; (3) speed: SB attempt rate per time on first, triples rate; (4) position mix: share of games at SS, CF, C; (5) progression pace in games: games at current level, career games below current level per level climbed (ascent pace), levels climbed this season, repeated level (pace partly encodes org scouting judgment; stated on the methodology page); (6) height and weight. Each kept only if it improves train-era CV (C9).
 
 ## Explicitly out of scope
 
