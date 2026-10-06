@@ -279,6 +279,7 @@ def drivers(mod, df, target, top=5):
         sv = shap.TreeExplainer(est).shap_values(X)
         contrib = sv[1] if isinstance(sv, list) else sv
         names, raw = mod["cols"], X.to_numpy()
+    top = min(top, contrib.shape[1])  # top=999 gives every feature (B8 grouped drivers)
     top_i = np.argsort(-np.abs(contrib), axis=1)[:, :top]
     rows = np.repeat(np.arange(len(df)), top)
     cols = top_i.ravel()
