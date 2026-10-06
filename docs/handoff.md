@@ -70,3 +70,24 @@ Grain player_id x season x level x league_id (same keys and row count as milb_pl
 
 ### Spec deviations
 - S5 / D2 / Q11: park factors come from Stats API team home/road splits, not PBP (repo PBP ends May 2025 and cannot cover 2025-26). Because the API covered every level-season, no PBP was used, downloaded or deleted (cells by method: 5,493 api, 0 pbp). D2's "PBP 2005 to 2025" row is therefore unused; B11 still needs PBP for batted-ball data.
+
+## B2 - Simplified WAR + target (S4, A2, A3, A4, C1, D7, Q2)
+
+Run: `python run.py b2` (module `pipeline/b2_war.py`; tests `.venv/bin/pytest tests/test_b2.py -q`). Runtime: seconds warm (44 cached team-season API calls cold). Needs B1 outputs and `data/park_factors.parquet` (B3). Validation data `data/raw/bwar.csv` (35 MB, gitignored with data/raw, fetched once from baseball-reference with a normal UA; if blocked, `main()` prints a skip message and the C1 test is skipped).
+
+Method: pooled no-intercept OLS of team runs on 1B, 2B, 3B, HR, uBB+HBP (BB-IBB+HBP), outs (AB-H+SF+SH) over 660 MLB team-seasons 2005-2026 (Stats API `teams/stats?stats=season`, hitting and pitching); coefficients rescaled per season so predicted league runs = actual. wOBA weight = (run value - out value) times wOBA_scale, where scale makes league wOBA = league OBP (so scale ~1.5, not FanGraphs' 1.2; weights are on the OBP scale). wOBA denominator AB+BB-IBB+SF+HBP. bat_runs = (wOBA-lg_wOBA)/wOBA_scale*PA. park_runs = -(ppf_R-1)*lg_R_per_PA*PA, ppf_R = PA-weighted (1+pf_R)/2 (missing pf_R treated neutral). pos_runs per spec (C +12.5, SS 7.5, 2B/3B/CF 2.5, LF/RF -7.5, 1B -12.5, DH -17.5, per 162 games, prorated); DH games = max(0, G - non-P fielding games); the fielding file has no generic "OF" rows so the -2.5 fallback is never used. repl_runs = 20*PA/600. RPW = 9*(lgR/lgIP)*1.5+3 (9.1-10.4). owar = (bat+park+pos+repl)/RPW. Pitchers dropped when P games > 50% of fielding games.
+
+### data/linear_weights.parquet
+Grain season (22 rows). rv_{1B,2B,3B,HR,uBB_HBP,out} run values; w_{1B,2B,3B,HR,uBB_HBP} wOBA weights; wOBA_scale; lg_wOBA (= league OBP); lg_R_per_PA; RPW.
+
+### data/mlb_war.parquet
+Grain player_id x season (13,977 rows, non-pitchers with PA>0, teams summed). PA int, wOBA, lg_wOBA, wOBA_scale, bat_runs, park_runs, pos_runs, repl_runs, RPW, owar (all float), primary_pos (position with most non-P fielding games; "DH" if none). bat_runs is not park-adjusted; add park_runs.
+
+### data/war_target.parquet
+Grain player_id (2,549 rows): debut_season (year of players.mlb_debut_date), war_6yr (sum of owar over debut_season..+5, 2020 included), n_seasons_observed, censored (debut_season+5 > 2026), pre2005 (debut < 2005; sums incomplete, exclude from training). Only players with at least one hitter-season in mlb_war; debuts that were pitcher-only / no-PA are absent (treat as war_6yr 0 or non-hitters downstream, B4/B5 decision). Non-censored 2005-2017 debuts (n=1,291): median war_6yr 0.36, 38% below zero (low-PA replacement-level-ish seasons have slightly negative oWAR), exactly 0 never; mean 3.2, p75 4.5, max 39.6.
+
+### Validation (C1), 300+ PA non-pitchers, n=5,747
+r vs bWAR WAR = 0.8505 (threshold 0.85, passes barely); r vs bWAR (runs_bat+runs_position+runs_replacement)/our RPW = 0.9773. The gap is fielding and baserunning/DP: largest negative residuals are glove-first players (Betts 2016, Gardner 2010, Simmons 2017, Kiermaier 2015, Duran 2024), largest positive are bad-defense sluggers (Dunn 2009, Kemp 2010, McCutchen 2016). Mean residual by position is within +-0.4 WAR (C +0.40, CF -0.35).
+
+### Quirks / deviations
+Per-600-PA league bat_runs among non-pitchers is ~+1.9 runs pre-2020 (pitcher bats excluded), ~0 after universal DH. No spec deviations. 2020 oWAR uses the 60-game season with the same per-162 positional proration (so positional/replacement runs are scaled by games/PA correctly).

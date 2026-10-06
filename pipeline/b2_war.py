@@ -1,0 +1,159 @@
+"""B2 simplified WAR (S4, A2, A3, A4, C1, D7, Q2). MLB hitter-seasons 2005-2026, oWAR = batting (park-adjusted)
++ positional + replacement runs, over runs-per-win. No fielding/baserunning. Also the 6-year WAR target per player.
+
+Outputs (data/): linear_weights.parquet (season), mlb_war.parquet (player x season), war_target.parquet (player).
+bWAR (D7, data/raw/bwar.csv) is validation only; see tests/test_b2.py and docs/handoff.md.
+"""
+import numpy as np
+import pandas as pd
+import requests
+
+from pipeline.common import DATA, RAW, api_get, pmap
+
+YEARS = range(2005, 2027)
+EVENTS = ["1B", "2B", "3B", "HR", "uBB_HBP", "out"]
+POS_RUNS = {"C": 12.5, "SS": 7.5, "2B": 2.5, "3B": 2.5, "CF": 2.5, "LF": -7.5, "RF": -7.5, "1B": -12.5,
+            "DH": -17.5, "OF": -2.5}  # OF (generic) never occurs in the data; kept for safety
+BWAR_URL = "https://www.baseball-reference.com/data/war_daily_bat.txt"
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+
+
+def _team_totals(season, group):
+    d = api_get("teams/stats", stats="season", group=group, season=season, sportId=1, gameType="R", limit=100)
+    return [s["stat"] | {"team_id": s["team"]["id"], "season": season} for s in d["stats"][0]["splits"]]
+
+
+def _ip(s):  # "1432.1" -> 1432 + 1/3
+    w, _, f = str(s).partition(".")
+    return int(w) + int(f or 0) / 3
+
+
+def _events(d):
+    return pd.DataFrame({"1B": d.H - d["2B"] - d["3B"] - d.HR, "2B": d["2B"], "3B": d["3B"], "HR": d.HR,
+                         "uBB_HBP": d.BB - d.IBB + d.HBP, "out": d.AB - d.H + d.SF + d.SH})
+
+
+def linear_weights():
+    hit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "hitting"), YEARS) for r in rs])
+    pit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "pitching"), YEARS) for r in rs])
+    num = ["atBats", "hits", "doubles", "triples", "homeRuns", "baseOnBalls", "intentionalWalks", "hitByPitch",
+           "sacFlies", "sacBunts", "runs", "plateAppearances"]
+    hit = hit[["season", "team_id"] + num].astype({c: float for c in num})
+    hit.columns = ["season", "team_id", "AB", "H", "2B", "3B", "HR", "BB", "IBB", "HBP", "SF", "SH", "R", "PA"]
+    pit["IP"] = pit["inningsPitched"].map(_ip)
+    ev = _events(hit)
+    X, y = ev[EVENTS].to_numpy(), hit.R.to_numpy()
+    beta = np.linalg.lstsq(X, y, rcond=None)[0]  # pooled OLS, no intercept
+    hit = hit.join(ev[["1B", "uBB_HBP", "out"]])
+    lg = hit.groupby("season")[["AB", "H", "BB", "IBB", "HBP", "SF", "SH", "R", "PA"] + EVENTS].sum()
+    lg["IP"] = pit.groupby("season").IP.sum()
+    rows = []
+    for s, r in lg.iterrows():
+        rv = beta * r.R / (r[EVENTS].to_numpy() @ beta)  # scale so predicted league runs == actual
+        w = rv[:5] - rv[5]
+        denom = r.AB + r.BB - r.IBB + r.SF + r.HBP
+        obp = (r.H + r.BB + r.HBP) / (r.AB + r.BB + r.HBP + r.SF)
+        raw = (w * r[EVENTS[:5]].to_numpy()).sum() / denom
+        scale = obp / raw  # wOBA = scale * sum(w n)/denom
+        rows.append({"season": s, **{f"rv_{e}": v for e, v in zip(EVENTS, rv)},
+                     **{f"w_{e}": scale * v for e, v in zip(EVENTS[:5], w)},
+                     "wOBA_scale": scale, "lg_wOBA": obp, "lg_R_per_PA": r.R / r.PA,
+                     "RPW": 9 * (r.R / r.IP) * 1.5 + 3})
+    return pd.DataFrame(rows)
+
+
+def war():
+    lw = linear_weights()
+    lw.to_parquet(DATA / "linear_weights.parquet")
+    ms = pd.read_parquet(DATA / "mlb_seasons.parquet").merge(lw, on="season")
+    pf = pd.read_parquet(DATA / "park_factors.parquet").query("sport == 'mlb'")[["season", "team_id", "pf_R"]]
+    ms = ms.merge(pf, on=["season", "team_id"], how="left")
+    ms["ppf"] = (1 + ms.pf_R.fillna(0)) / 2  # pf_R missing -> neutral
+    ms["ppf_pa"] = ms.ppf * ms.PA
+    ms["uBB_HBP"] = ms.BB - ms.IBB + ms.HBP
+    ms["1B"] = ms.H - ms["2B"] - ms["3B"] - ms.HR
+    ms["w_sum"] = sum(ms[f"w_{e}"] * ms[e] for e in EVENTS[:5]) / ms.wOBA_scale  # un-scaled run-weighted sum
+    ms["den"] = ms.AB + ms.BB - ms.IBB + ms.SF + ms.HBP
+    g = ms.groupby(["player_id", "season"])
+    p = g[["G", "PA", "den", "w_sum", "ppf_pa"]].sum()
+    p = p.join(g[["wOBA_scale", "lg_wOBA", "lg_R_per_PA", "RPW"]].first()).reset_index()
+    p = p[p.PA > 0]
+    p["wOBA"] = p.w_sum * p.wOBA_scale / p.den
+    p["bat_runs"] = (p.wOBA - p.lg_wOBA) / p.wOBA_scale * p.PA
+    p["park_runs"] = -(p.ppf_pa / p.PA - 1) * p.lg_R_per_PA * p.PA
+    p["repl_runs"] = 20 * p.PA / 600
+
+    fg = pd.read_parquet(DATA / "mlb_fielding_games.parquet")
+    tot = fg.groupby(["player_id", "season"]).games.sum().rename("f_all")
+    pg = fg[fg.position == "P"].set_index(["player_id", "season"]).games.rename("f_p")
+    nonp = fg[~fg.position.isin(["P", "DH"])]
+    pos = (nonp.assign(r=nonp.position.map(POS_RUNS) * nonp.games / 162)
+           .groupby(["player_id", "season"]).agg(pos_f=("r", "sum"), f_np=("games", "sum")))
+    top = nonp.sort_values("games").groupby(["player_id", "season"]).position.last().rename("primary_pos")
+    p = p.join(tot, on=["player_id", "season"]).join(pg, on=["player_id", "season"]).join(
+        pos, on=["player_id", "season"]).join(top, on=["player_id", "season"])
+    p[["f_all", "f_p", "pos_f", "f_np"]] = p[["f_all", "f_p", "pos_f", "f_np"]].fillna(0)
+    p = p[~(p.f_p > 0.5 * p.f_all)]  # drop pitchers
+    dh = (p.G - p.f_np).clip(lower=0)
+    p["pos_runs"] = p.pos_f + POS_RUNS["DH"] * dh / 162
+    p["primary_pos"] = p.primary_pos.fillna("DH")
+    p["owar"] = (p.bat_runs + p.park_runs + p.pos_runs + p.repl_runs) / p.RPW
+    out = p[["player_id", "season", "PA", "wOBA", "lg_wOBA", "wOBA_scale", "bat_runs", "park_runs", "pos_runs",
+             "repl_runs", "RPW", "owar", "primary_pos"]]
+    out.to_parquet(DATA / "mlb_war.parquet")
+    return out
+
+
+def target(w):
+    pl = pd.read_parquet(DATA / "players.parquet")
+    pl = pl[pl.mlb_debut_date.notna()][["player_id", "mlb_debut_date"]]
+    pl["debut_season"] = pl.mlb_debut_date.dt.year
+    m = w.merge(pl, on="player_id")
+    m = m[(m.season >= m.debut_season) & (m.season <= m.debut_season + 5)]
+    a = m.groupby("player_id").agg(war_6yr=("owar", "sum"), n_seasons_observed=("season", "nunique"))
+    t = pl.drop(columns="mlb_debut_date").merge(a, on="player_id", how="left")
+    # players with no hitter-seasons (pitchers, no PA) get no row in w: war_6yr 0 / n 0 would mislead, so drop them
+    t = t[t.war_6yr.notna()]
+    t["censored"] = t.debut_season + 5 > 2026
+    t["pre2005"] = t.debut_season < 2005
+    t.to_parquet(DATA / "war_target.parquet")
+    return t
+
+
+def fetch_bwar():
+    f = RAW / "bwar.csv"
+    if not f.exists():
+        r = requests.get(BWAR_URL, headers={"User-Agent": UA}, timeout=300)
+        r.raise_for_status()  # blocked -> raises; validation test is then skipped, no workarounds
+        f.write_bytes(r.content)
+    return f
+
+
+def validate(w):
+    b = pd.read_csv(fetch_bwar(), low_memory=False)
+    b = b[(b.pitcher == "N") & b.year_ID.between(2005, 2026)]
+    for c in ["WAR", "runs_bat", "runs_position", "runs_replacement"]:
+        b[c] = pd.to_numeric(b[c], errors="coerce")
+    b = b.groupby(["mlb_ID", "year_ID"]).agg(WAR=("WAR", "sum"), rb=("runs_bat", "sum"), rp=("runs_position", "sum"),
+                                             rr=("runs_replacement", "sum")).reset_index()
+    j = w.merge(b, left_on=["player_id", "season"], right_on=["mlb_ID", "year_ID"])
+    j = j[j.PA >= 300]
+    j["b_off"] = (j.rb + j.rp + j.rr) / j.RPW
+    return j
+
+
+def main():
+    w = war()
+    t = target(w)
+    print(f"mlb_war {len(w)} rows, war_target {len(t)} rows")
+    try:
+        j = validate(w)
+    except Exception as e:  # validation is optional (C1); report and continue
+        print("bWAR validation skipped:", e)
+        return
+    print(f"C1 (n={len(j)}): r vs bWAR WAR = {j.owar.corr(j.WAR):.4f}; "
+          f"r vs bWAR bat+pos+repl = {j.owar.corr(j.b_off):.4f}")
+
+
+if __name__ == "__main__":
+    main()
