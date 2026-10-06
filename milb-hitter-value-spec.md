@@ -19,22 +19,23 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **S1** Data layer: repo season batting files 2005 to 2024 (all levels), MiLB 2025 to 2026 pulled from the MLB Stats API, mid-season stints aggregated, all rate stats recomputed from counting stats.
 - **S2** Player bio and acquisition: birthdate, bats, MLB debut date from the Stats API people endpoint; draft round, pick, and signing bonus from the draft endpoint.
 - **S3** MLB outcomes: MLB season batting and games by position, 2005 to 2026, from the Stats API.
-- **S4** Simplified in-house WAR: wOBA-based batting runs, park adjusted, plus positional adjustment and replacement level. No fielding, no baserunning. Validated against bWAR.
+- **S4** Simplified in-house WAR: wOBA-based batting runs, park adjusted, plus baserunning runs (wSB from SB/CS, and GIDP runs vs league rate), positional adjustment and replacement level. No fielding. Validated against bWAR. Baserunning added 2026-10-06 (user decision); extra-bases-taken baserunning not included (needs MLB play-by-play).
 - **S5** Environment adjustments: park factors from MLB Stats API team home/road splits (MiLB and MLB, 2005 to 2026; 3-year window, regressed by reliability-derived k), and league-season translation factors from matched pairs, chained level to level up to MLB. Changed from PBP during B3: PBP ends May 2025 and could not cover the 2026 snapshot.
 - **S6** MLEs: MLB-equivalent K%, BB%, ISO, BABIP for every player-season, regressed by sample size.
 - **S7** Three models trained on 2005 to 2017 snapshots: P(reach MLB), E[WAR in first 6 MLB seasons | reached], and ETA (years to debut | reached). Features: MLEs, age relative to level, highest level, projected MLB position, year-over-year trajectory.
 - **S8** Prior for players with no A-or-above sample (Rookie, DSL, pre-2021 A-): P(MLB) and E[WAR] from draft slot and bonus, flagged low confidence.
-- **S9** Backtest on held-out 2013 to 2017 snapshots: model vs Baseball America top-100 ranks (headline), plus a naive age-vs-level + OPS baseline across the full population.
+- **S9** Backtest on held-out 2013 to 2017 snapshots: model vs preseason top-100 ranks published the following spring (lists 2014 to 2018; headline), plus a naive age-vs-level + OPS baseline across the full population.
 - **S10** Surplus $ model: market $/WAR with annual inflation, league minimum for 3 pre-arb years, arb at 40/60/80% of value, 8% discount rate, cash flows starting at projected ETA.
 - **S11** Static site: leaderboard, one card per player (stats, MLEs, P(MLB), E[WAR], ETA, surplus $ with 10/50/90 range, top drivers), and a methodology page with the backtest and bWAR validation.
 - **S12** 2026 offseason snapshot run and published.
 - **S13** Batted-ball context on player cards: avg and 90th pct exit velocity, hard-hit rate, launch angle, barrel rate, where tracked (AAA 2023+, Low-A FSL parks 2021+). Display only; no effect on the projection.
 - **S14** Batted-ball input adjustment: for tracked AAA and Low-A FSL hitters, replace observed ISO and BABIP with expected values from EV/LA, blended toward observed by sample size, before they enter the MLE and model chain. Ships only if it passes C8.
+- **S15** Extra model features, added 2026-10-06: (1) contact rate (1 - whiffs/swings) and swing rate; (2) batted-ball mix GB%, FB%, LD%, PU% from repo out and hit types; (3) speed: SB attempt rate per time on first, triples rate; (4) position mix: share of games at SS, CF, C; (5) progression: repeated level, in-season promotion, seasons at level; (6) height and weight. Each kept only if it improves train-era CV (C9).
 
 ## Explicitly out of scope
 
 - **X1** Pitchers. v2.
-- **X2** Fielding and baserunning in WAR. No free fielding source before 2016.
+- **X2** Fielding in WAR. No free fielding source before 2016. (Baserunning moved into S4 on 2026-10-06.)
 - **X3** In-season or weekly refresh, and any live backend.
 - **X4** International signing bonus data. No free source.
 - **X5** Similarity comps on player cards. Candidate for v2.
@@ -53,6 +54,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **A8** Python: pandas + DuckDB, parquet intermediates, scikit-learn + LightGBM. Pipeline writes JSON; static HTML/JS site renders it.
 - **A9** Offseason snapshot, rerun by hand. No scheduler.
 - **A11** Tracking data improves inputs, not the model. No 2005 to 2017 training row has EV/LA, and 2021+ players have no 6-year outcomes until about 2030, so EV/LA cannot be a model feature. S14 sharpens the ISO/BABIP the trained model already uses.
+- **A12** WAR model selection ranks candidates by Spearman of predicted vs realized WAR among reached players (train-era CV), not RMSE, because valuation is a ranking problem. Changed 2026-10-06 after B7: RMSE selection picked a LightGBM whose noisy ranks lost to the naive baseline; train-era CV favored ridge.
 - **A10** Projected MLB position from a historical transition matrix (MiLB position mix to MLB primary position), so shortstops slide down the spectrum at realistic rates.
 
 ## Data
@@ -66,9 +68,10 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 | D5 | Draft picks and bonuses | Stats API `/draft/{year}` | `data/draft.parquet` |
 | D6 | MLB batting + games by position 2005 to 2026 | Stats API | `data/mlb_seasons.parquet` |
 | D7 | bWAR (validation only) | Baseball-Reference `war_daily_bat` | `data/raw/bwar.csv` |
-| D8 | BA top-100 lists, 2013 to 2017 | hand collected, matched to MLBAM IDs | `data/manual/top100.csv` |
+| D8 | Preseason top-100 lists 2014 to 2018 (MLB Pipeline; BA paywalled) | hand collected from mlb.com, matched to MLBAM IDs | `data/manual/top100.csv` |
 | D9 | $ model parameters with citations | public sources at build time | `data/manual/dollar_params.csv` |
 | D11 | MiLB Statcast batted balls 2025 to 2026 (AAA, FSL) and MLB Statcast 2023 to 2026 | Baseball Savant | `data/raw/savant/` |
+| D12 | MiLB pitch calls 2025 to 2026, all levels A to AAA (swings/whiffs for S15 contact rate) | MLB Stats API game feeds | `data/raw/statsapi/`, aggregated to player-season |
 | D10 | Published outputs | pipeline | `site/data/*.json` |
 
 ## Success criteria
@@ -80,6 +83,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **C5** Every number on a player card traces to inputs shown on that card. One command rebuilds data, models, and site JSON from scratch.
 - **C6** 2026 top 50 passes a manual smell test against current public top-100 lists, with disagreements explained by drivers.
 - **C8** S14 gate: on AAA 2023 to 2025, expected ISO/BABIP predict next-season ISO/BABIP better (lower RMSE) than observed, and AAA batted-ball metrics predict MLB results for 2023 to 2025 arrivals at least as well as AAA outcomes. If it fails, S14 is dropped and the methodology page reports the null result.
+- **C9** S15 gate: each feature group is kept only if adding it improves train-era (s <= 2012) GroupKFold OOF metrics: P(MLB) log loss or ev Spearman, without worsening the other. Decided before any holdout rerun; the 2013 to 2017 holdout is evaluated once afterward.
 - **C7** Site is static, works at phone width, no horizontal scroll.
 
 ## Open questions and assumptions
@@ -89,7 +93,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q3** Naive age + OPS baseline included alongside the top-100 benchmark.
 - **Q4** All rate stats recomputed from counting stats; repo rate columns ignored.
 - **Q5** Unit of analysis is one row per player per offseason snapshot. CV grouped by player so a player never appears in both train and test.
-- **Q6** Benchmark is Baseball America preseason top 100. If a year cannot be sourced, MLB Pipeline substitutes and the page says so.
+- **Q6** Benchmark: MLB Pipeline preseason top 100, all five years. Baseball America full lists are paywalled (403 on public archives). The methodology page states this.
 - **Q7** Eligibility for stat projection: 150+ PA at A or above across the last two seasons, and still rookie-eligible (under 130 MLB AB). Everyone else falls to the S8 prior or is excluded.
 - **Q8** MLB park factors for batting runs computed the same way as MiLB ones (home/road splits from Stats API), not borrowed from bWAR.
 - **Q9** Hosting: static site deployed to Netlify after B10 (user decision, 2026-10-06).
@@ -99,6 +103,8 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 
 - **Q13** Baseball Savant serves MiLB Statcast for AAA and FSL in bulk-downloadable form. If not, S13 and S14 fall back to repo PBP through May 2025 only.
 - **Q14** Cards flag when S14 was applied, since tracking coverage depends on organization (FSL affiliates only at Low-A).
+- **Q15** Height and weight are current values from the people endpoint, not as of each snapshot. Mild look-ahead leak; stated on the methodology page.
+- **Q16** If game-feed pitch calls for 2025 to 2026 cannot be pulled, contact rate is imputed for those seasons from K% and swing-free features, flagged on cards.
 
 ## Build order
 
@@ -109,6 +115,9 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **B5** Position transition matrix and feature table. (S)
 - **B6** P(MLB), E[WAR], ETA models plus S8 prior. (M)
 - **B11** Batted-ball layer: S13 metrics from repo PBP (D2) and Savant (D11), expected ISO/BABIP fit, C8 tests. Runs after B6, before B7. (M)
+- **B13** Baserunning runs in oWAR (S4): wSB and GIDP runs, rerun bWAR validation. (S)
+- **B12** S15 features: B1 keeps out/hit types and height/weight; game-feed pitch calls for 2025 to 2026; B5 features; C9 selection. (M)
+- **B6r** Refit B6 with A12 selection and kept S15 features; rerun B11 and B7 once. (S)
 - **B7** Top-100 collection (D8) and backtest (C2 to C4). (M, mostly manual)
 - **B8** Surplus $ model. (S)
 - **B9** Static site and methodology page. (M)

@@ -147,22 +147,23 @@
 <div class="row"><span class="id">S1</span><p>Data layer: repo season batting 2005–2024, MiLB 2025–2026 from the Stats API, stints aggregated, rate stats recomputed from counting stats.</p></div>
 <div class="row"><span class="id">S2</span><p>Player bio and acquisition: birthdate, bats, MLB debut; draft round, pick and signing bonus.<span class="why">Stats API <code>/people</code> and <code>/draft</code>.</span></p></div>
 <div class="row"><span class="id">S3</span><p>MLB outcomes: season batting and games by position, 2005–2026.</p></div>
-<div class="row"><span class="id">S4</span><p>Simplified in-house WAR: park-adjusted wOBA batting runs + positional adjustment + replacement level. Validated against bWAR.<span class="why">No fielding, no baserunning.</span></p></div>
+<div class="row"><span class="id">S4</span><p>Simplified in-house WAR: park-adjusted wOBA batting runs + baserunning runs (wSB, GIDP) + positional adjustment + replacement level. Validated against bWAR.<span class="why">No fielding. Baserunning added 2026-10-06; extra-bases-taken not included (needs MLB play-by-play).</span></p></div>
 <div class="row"><span class="id">S5</span><p>Environment: park factors from Stats API team home/road splits (MiLB and MLB, 2005–2026, 3-year window, regressed); league-season translation factors from matched pairs, chained to MLB.<span class="why">Changed from PBP during B3: PBP ends May 2025 and could not cover the 2026 snapshot.</span></p></div>
 <div class="row"><span class="id">S6</span><p>MLEs: MLB-equivalent K%, BB%, ISO, BABIP per player-season, regressed by sample size.</p></div>
 <div class="row"><span class="id">S7</span><p>Three models trained on 2005–2017 snapshots: P(reach MLB), E[WAR in first 6 MLB seasons | reached], ETA.<span class="why">Features: MLEs, age vs level, highest level, projected MLB position, trajectory.</span></p></div>
 <div class="row"><span class="id">S8</span><p>Draft prior for players with no A-or-above sample (Rookie, DSL, pre-2021 A-), flagged low confidence.</p></div>
-<div class="row"><span class="id">S9</span><p>Backtest on held-out 2013–2017 snapshots vs Baseball America top-100 ranks, plus a naive age + OPS baseline on the full population.</p></div>
+<div class="row"><span class="id">S9</span><p>Backtest on held-out 2013–2017 snapshots vs the top-100 lists published the following spring (2014–2018), plus a naive age + OPS baseline on the full population.</p></div>
 <div class="row"><span class="id">S10</span><p>Surplus $ model: market $/WAR with inflation, league minimum for 3 pre-arb years, arb at 40/60/80% of value, 8% discount, cash flows start at ETA.</p></div>
 <div class="row"><span class="id">S11</span><p>Static site: leaderboard, one card per player (stats, MLEs, P(MLB), E[WAR], ETA, surplus $ 10/50/90, top drivers), methodology page with backtest and bWAR check.</p></div>
 <div class="row"><span class="id">S12</span><p>2026 offseason snapshot run and published.</p></div>
 <div class="row"><span class="id">S13</span><p>Batted-ball context on player cards: avg and 90th pct EV, hard-hit rate, launch angle, barrel rate, where tracked (AAA 2023+, Low-A FSL parks 2021+).<span class="why">Display only. No effect on the projection.</span></p></div>
 <div class="row"><span class="id">S14</span><p>Batted-ball input adjustment: for tracked AAA and FSL hitters, expected ISO and BABIP from EV/LA, blended toward observed by sample size, replace the observed values before the MLE and model chain.<span class="why">Ships only if it passes C8.</span></p></div>
+<div class="row"><span class="id">S15</span><p>Extra features: contact and swing rate; GB/FB/LD/PU mix; speed (SB attempt rate, triples); position mix (share at SS/CF/C); progression (repeat level, in-season promotion, seasons at level); height and weight.<span class="why">Each group kept only if it passes C9. Added 2026-10-06.</span></p></div>
 </section>
 <section>
 <h2>Deliberately not in v1</h2>
 <div class="row cut"><span class="id">X1</span><p>Pitchers.<span class="why">v2.</span></p></div>
-<div class="row cut"><span class="id">X2</span><p>Fielding and baserunning in WAR.<span class="why">No free fielding source before 2016.</span></p></div>
+<div class="row cut"><span class="id">X2</span><p>Fielding in WAR.<span class="why">No free fielding source before 2016. Baserunning moved into S4.</span></p></div>
 <div class="row cut"><span class="id">X3</span><p>In-season refresh or any live backend.</p></div>
 <div class="row cut"><span class="id">X4</span><p>International signing bonus data.<span class="why">No free source.</span></p></div>
 <div class="row cut"><span class="id">X5</span><p>Similarity comps on cards.<span class="why">Candidate for v2.</span></p></div>
@@ -182,6 +183,7 @@
 <div class="row"><span class="id">A9</span><p>Offseason snapshot, rerun by hand. No scheduler.</p></div>
 <div class="row"><span class="id">A10</span><p>Projected MLB position from a historical MiLB-to-MLB position transition matrix.<span class="why">WAR has no fielding, so position carries the defensive value; shortstops must slide down the spectrum at realistic rates.</span></p></div>
 <div class="row"><span class="id">A11</span><p>Tracking data improves inputs, not the model.<span class="why">No 2005–2017 training row has EV/LA, and 2021+ players have no 6-year outcomes until ~2030, so EV/LA cannot be a model feature. S14 sharpens the ISO/BABIP the trained model already uses.</span></p></div>
+<div class="row"><span class="id">A12</span><p>WAR model chosen by rank correlation among reached players in train-era CV, not RMSE.<span class="why">Valuation is a ranking problem. RMSE selection picked a LightGBM whose noisy ranks lost to the naive baseline in B7.</span></p></div>
 </section>
 <section>
 <h2>Data</h2>
@@ -194,9 +196,10 @@
 <tr><td class="id-cell">D5</td><td>Draft picks and bonuses</td><td>Stats API /draft/{year}</td><td><code>data/draft.parquet</code></td></tr>
 <tr><td class="id-cell">D6</td><td>MLB batting + games by position 2005–2026</td><td>Stats API</td><td><code>data/mlb_seasons.parquet</code></td></tr>
 <tr><td class="id-cell">D7</td><td>bWAR (validation only)</td><td>Baseball-Reference war_daily_bat</td><td><code>data/raw/bwar.csv</code></td></tr>
-<tr><td class="id-cell">D8</td><td>BA top-100 lists 2013–2017</td><td>hand collected, matched to MLBAM IDs</td><td><code>data/manual/top100.csv</code></td></tr>
+<tr><td class="id-cell">D8</td><td>Preseason top-100 lists 2014–2018 (MLB Pipeline; BA paywalled)</td><td>mlb.com, matched to MLBAM IDs</td><td><code>data/manual/top100.csv</code></td></tr>
 <tr><td class="id-cell">D9</td><td>$ model parameters with citations</td><td>public sources at build time</td><td><code>data/manual/dollar_params.csv</code></td></tr>
 <tr><td class="id-cell">D11</td><td>MiLB Statcast 2025–2026 (AAA, FSL) and MLB Statcast 2023–2026</td><td>Baseball Savant</td><td><code>data/raw/savant/</code></td></tr>
+<tr><td class="id-cell">D12</td><td>MiLB pitch calls 2025–2026, A to AAA (contact rate)</td><td>Stats API game feeds</td><td><code>data/raw/statsapi/</code></td></tr>
 <tr><td class="id-cell">D10</td><td>Published outputs</td><td>pipeline</td><td><code>site/data/*.json</code></td></tr>
 </table></div>
 </section>
@@ -210,6 +213,7 @@
 <div class="row"><span class="id">C6</span><p>2026 top 50 passes a manual smell test against current public top-100s, disagreements explained by drivers.</p></div>
 <div class="row"><span class="id">C7</span><p>Site is static and works at phone width with no horizontal page scroll.</p></div>
 <div class="row"><span class="id">C8</span><p>S14 gate: on AAA 2023–2025, expected ISO/BABIP beat observed at predicting next-season ISO/BABIP (RMSE), and AAA batted-ball metrics predict MLB results for 2023–2025 arrivals at least as well as AAA outcomes.<span class="why">If it fails, S14 is dropped and the methodology page reports the null result.</span></p></div>
+<div class="row"><span class="id">C9</span><p>S15 gate: a feature group is kept only if it improves train-era OOF P(MLB) log loss or ev Spearman without worsening the other.<span class="why">Decided before the single holdout rerun.</span></p></div>
 </section>
 <section>
 <h2>Assumptions I made without asking</h2>
@@ -218,7 +222,7 @@
 <div class="row ask"><span class="id">Q3</span><p>Naive age + OPS baseline included alongside the top-100 benchmark.</p></div>
 <div class="row ask"><span class="id">Q4</span><p>All rate stats recomputed from counting stats; repo rate columns ignored.</p></div>
 <div class="row ask"><span class="id">Q5</span><p>Unit of analysis: one row per player per offseason snapshot. CV grouped by player.<span class="why">Prevents the same player landing in train and test.</span></p></div>
-<div class="row ask"><span class="id">Q6</span><p>Benchmark is BA preseason top 100. If a year cannot be sourced, MLB Pipeline substitutes and the page says so.</p></div>
+<div class="row ask"><span class="id">Q6</span><p>Benchmark is MLB Pipeline preseason top 100 for all five years.<span class="why">Baseball America full lists are paywalled. The methodology page says so.</span></p></div>
 <div class="row ask"><span class="id">Q7</span><p>Stat projection eligibility: 150+ PA at A or above over the last two seasons, and still rookie-eligible (under 130 MLB AB).<span class="why">Everyone else falls to the S8 prior or is excluded.</span></p></div>
 <div class="row ask"><span class="id">Q8</span><p>MLB park factors computed the same way as MiLB ones, not borrowed from bWAR.</p></div>
 <div class="row ask"><span class="id">Q9</span><p>Hosting: static site deployed to Netlify after B10.<span class="why">User decision, 2026-10-06.</span></p></div>
@@ -227,6 +231,8 @@
 <div class="row ask"><span class="id">Q12</span><p>Top-100 name matching rejects ambiguous matches rather than guessing; unmatched names are listed.</p></div>
 <div class="row ask"><span class="id">Q13</span><p>Baseball Savant serves MiLB Statcast for AAA and FSL in bulk.<span class="why">If not, S13 and S14 fall back to repo PBP through May 2025 only.</span></p></div>
 <div class="row ask"><span class="id">Q14</span><p>Cards flag when S14 was applied.<span class="why">Tracking coverage depends on organization: at Low-A, FSL affiliates only.</span></p></div>
+<div class="row ask"><span class="id">Q15</span><p>Height and weight are current values, not as of each snapshot.<span class="why">Mild look-ahead leak, stated on the methodology page.</span></p></div>
+<div class="row ask"><span class="id">Q16</span><p>If 2025–2026 pitch calls cannot be pulled, contact rate for those seasons is imputed and flagged.</p></div>
 </section>
 <section>
 <h2>Build order</h2>
@@ -237,6 +243,9 @@
 <div class="row"><span class="id">B5</span><p>Position transition matrix and feature table.<span class="why">S</span></p></div>
 <div class="row"><span class="id">B6</span><p>P(MLB), E[WAR], ETA models plus S8 prior.<span class="why">M</span></p></div>
 <div class="row"><span class="id">B11</span><p>Batted-ball layer: S13 metrics from PBP and Savant, expected ISO/BABIP fit, C8 tests.<span class="why">M. Runs after B6, before B7.</span></p></div>
+<div class="row"><span class="id">B13</span><p>Baserunning runs in oWAR, rerun bWAR validation.<span class="why">S</span></p></div>
+<div class="row"><span class="id">B12</span><p>S15 features: keep out/hit types and height/weight in B1, pull 2025–2026 pitch calls, add to B5, C9 selection.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B6r</span><p>Refit B6 with A12 and kept S15 features; rerun B11 and B7 once.<span class="why">S</span></p></div>
 <div class="row"><span class="id">B7</span><p>Top-100 collection (D8) and backtest (C2–C4).<span class="why">M, mostly manual</span></p></div>
 <div class="row"><span class="id">B8</span><p>Surplus $ model.<span class="why">S</span></p></div>
 <div class="row"><span class="id">B9</span><p>Static site and methodology page.<span class="why">M</span></p></div>
