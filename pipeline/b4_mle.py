@@ -1,4 +1,5 @@
-"""B4: MiLB -> MLB-equivalent K%, BB%, ISO, BABIP (S5 translation part, S6, A5).
+"""B4: MiLB -> MLB-equivalent K%, BB%, ISO, BABIP (S5 translation part, S6, A5, C10). v1.1: same-season plus cross-season
+pairs (aging removed by repeater drift), regression toward the source league-season mean, C10 level-step test.
 
 Method (see docs/handoff.md B4 for the full write-up):
  1. Park-neutralize every A..AAA (affiliated, non-pitcher) rate by its player park factor; MLB by half-home team pf.
@@ -22,6 +23,8 @@ NEXT = dict(zip(LEVELS[:-1], LEVELS[1:]))
 COMPS = ["K", "BB", "ISO", "BABIP"]
 MEXICAN_LEAGUE = 125  # unaffiliated; appears under AAA through 2019
 MIN_PA = 50
+MIN_PA_CROSS = 300  # S6 v1.1: cross-season pairs (L in s -> L+1 in s+1) need >= 300 PA at both ends
+AGE_BUCKETS = [0, 21.5, 23.5, 25.5, 99]  # <=21, 22-23, 24-25, 26+ (age on July 1 of s)
 # FanGraphs stabilization points (denominator unit: PA for K/BB, AB for ISO, BIP for BABIP)
 K_STAB = {"K": 60, "BB": 120, "ISO": 160, "BABIP": 820}
 DEN = {"K": "PA", "BB": "PA", "ISO": "AB", "BABIP": "BIP"}
@@ -49,7 +52,7 @@ def prep_milb():
     g = s.assign(b2=s["2B"] + 2 * s["3B"], b3=3 * s.HR).groupby(["league_id", "season"])[["b2", "b3"]].transform("sum")
     wHR = g.b3 / (g.b2 + g.b3)
     s["ppf_ISO"] = (1 - wHR) * s.ppf_2B3B + wHR * s.ppf_HR
-    cols = ["player_id", "season", "level", "league_id", "PA", "AB", "H", "HR", "BB", "IBB", "HBP", "SO", "SF", "TBx"]
+    cols = ["player_id", "season", "level", "league_id", "age", "PA", "AB", "H", "HR", "BB", "IBB", "HBP", "SO", "SF", "TBx"]
     out = rates(s[cols].copy())
     for c in COMPS:
         out["neutral_" + c] = out[c] / s["ppf_" + {"K": "SO", "BB": "BB", "ISO": "ISO", "BABIP": "BABIP"}[c]]
@@ -94,17 +97,49 @@ def rollup(d, keys, cols=None):
     return out.reset_index()
 
 
-def build_pairs(milb, mlb):
-    """One row per (lower row, same-season upper aggregate) with both >= MIN_PA."""
+def _uppers(milb, mlb, min_pa):
     nc = ["neutral_" + c for c in COMPS]
     up_minor = rollup(milb, ["player_id", "season", "level"]).rename(columns={"PA": "PA_up"})
     up_mlb = mlb.rename(columns={"PA": "PA_up"})
     ups = pd.concat([up_minor, up_mlb[["player_id", "season", "level", "PA_up"] + nc]], ignore_index=True)
-    ups = ups[ups.PA_up >= MIN_PA]
-    lo = milb[milb.PA >= MIN_PA][["player_id", "season", "level", "league_id", "PA"] + nc]
+    return ups[ups.PA_up >= min_pa]
+
+
+def _bucket(age):
+    return pd.cut(age, AGE_BUCKETS, labels=False)
+
+
+def aging_drift(milb):
+    """S6 v1.1: year-over-year multiplicative drift of each neutral rate for players repeating a level (A..AAA, >= 300 PA
+    in one league-level row both years), by age bucket. Divides aging out of cross-season pairs."""
+    a = milb[milb.PA >= MIN_PA_CROSS]
+    j = a.merge(a.assign(season=a.season - 1), on=["player_id", "season", "level"], suffixes=("", "_n"))
+    j["w"] = 2 * j.PA * j.PA_n / (j.PA + j.PA_n)
+    j["b"] = _bucket(j.age)
+    out = {}
+    for c in COMPS:
+        q = j.dropna(subset=[f"neutral_{c}", f"neutral_{c}_n"])
+        g = q.assign(nu=q.w * q[f"neutral_{c}_n"], nl=q.w * q[f"neutral_{c}"]).groupby("b")[["nu", "nl"]].sum()
+        out[c] = (g.nu / g.nl).to_dict()
+    return out
+
+
+def build_pairs(milb, mlb, drift):
+    """Same-season pairs (lower row and upper level aggregate both >= MIN_PA) plus cross-season pairs (lower row at L
+    in s and L+1 aggregate in s+1, both >= MIN_PA_CROSS; upper rates divided by the aging drift of the lower row's age
+    bucket). Same-season pairs alone are biased: promotions follow hot stretches, inflating the lower rate."""
+    nc = ["neutral_" + c for c in COMPS]
+    lo = milb[milb.PA >= MIN_PA][["player_id", "season", "level", "league_id", "PA", "age"] + nc]
     lo = lo.assign(up_level=lo.level.map(NEXT))
-    p = lo.merge(ups.rename(columns={"level": "up_level"}), on=["player_id", "season", "up_level"],
-                 suffixes=("_lo", "_up"))
+    same = lo.merge(_uppers(milb, mlb, MIN_PA).rename(columns={"level": "up_level"}), on=["player_id", "season", "up_level"],
+                    suffixes=("_lo", "_up")).assign(kind="same")
+    lo2 = lo[lo.PA >= MIN_PA_CROSS]
+    up2 = _uppers(milb, mlb, MIN_PA_CROSS).rename(columns={"level": "up_level"}).assign(season=lambda d: d.season - 1)
+    cross = lo2.merge(up2, on=["player_id", "season", "up_level"], suffixes=("_lo", "_up")).assign(kind="cross")
+    b = _bucket(cross.age)
+    for c in COMPS:
+        cross[f"neutral_{c}_up"] = cross[f"neutral_{c}_up"] / b.map(drift[c]).fillna(1.0)
+    p = pd.concat([same, cross], ignore_index=True)
     p["w"] = 2 * p.PA * p.PA_up / (p.PA + p.PA_up)
     return p
 
@@ -200,7 +235,7 @@ def regress(m):
     for c in COMPS:
         n = m[DEN[c]]
         ok = m["mle_" + c].notna() & (n > 0)
-        key = [m.level, m.season]
+        key = [m.level, m.league_id, m.season]  # S6 v1.1: regress toward the source league-season mean, then translate
         prior = (m["mle_" + c].where(ok) * n.where(ok)).groupby(key).transform("sum") / n.where(ok).groupby(key).transform("sum")
         m["prior_" + c] = prior
         m["reg_" + c] = (n * m["mle_" + c] + K_STAB[c] * prior) / (n + K_STAB[c])
@@ -215,13 +250,45 @@ def player_season(m):
     return out.merge(top.rename("highest_level").reset_index(), on=["player_id", "season"])
 
 
+def level_step(m):
+    """C10: full-season (>= 300 PA, all MiLB PA at one level) movers L in s -> L+1 in s+1 vs same-level repeaters, mean
+    change of mle_ rates; movers' change minus age-bucket-matched repeater change, with its standard error."""
+    t = m.groupby(["player_id", "season"]).PA.transform("sum")
+    a = m[(m.PA >= MIN_PA_CROSS)].assign(tot=t)
+    a = a.groupby(["player_id", "season", "level"]).agg(PA=("PA", "sum"), tot=("tot", "first"), age=("age", "first"),
+                                                         **{f"mle_{c}": (f"mle_{c}", "mean") for c in COMPS}).reset_index()
+    a = a[a.PA == a.tot]
+    nxt = a.assign(season=a.season - 1)
+    out = {}
+    for lo, up in [("a", "a+"), ("a+", "aa"), ("aa", "aaa")]:
+        mv = a[a.level == lo].merge(nxt[nxt.level == up], on=["player_id", "season"], suffixes=("", "_n"))
+        rp = a[a.level == lo].merge(nxt[nxt.level == lo], on=["player_id", "season"], suffixes=("", "_n"))
+        mv["b"], rp["b"] = _bucket(mv.age), _bucket(rp.age)
+        res = {"n_movers": len(mv), "n_repeaters": len(rp)}
+        for c in COMPS:
+            dm, dr = mv[f"mle_{c}_n"] - mv[f"mle_{c}"], rp[f"mle_{c}_n"] - rp[f"mle_{c}"]
+            rb = dr.groupby(rp.b).agg(["mean", "var", "size"])
+            share = mv.b.value_counts(normalize=True)
+            exp = float((share * rb["mean"].reindex(share.index)).sum())
+            se = float(np.sqrt(dm.var() / len(dm) + (share ** 2 * rb["var"] / rb["size"]).reindex(share.index).sum()))
+            diff = float(dm.mean() - exp)
+            res[c] = {"mover_change": float(dm.mean()), "repeater_change_matched": exp, "diff": diff, "se": se,
+                      "pass": abs(diff) <= se}
+        out[f"{lo}->{up}"] = res
+    return out
+
+
 def main():
     milb, mlb = prep_milb(), prep_mlb()
-    pairs = build_pairs(milb, mlb)
+    drift = aging_drift(milb)
+    pairs = build_pairs(milb, mlb, drift)
     fac, ks = translation_factors(pairs, milb)
     fac.to_parquet(DATA / "translation_factors.parquet", index=False)
-    (DATA / "b4_k.json").write_text(json.dumps({"k": ks, "k_stab": K_STAB, "k_fixed": K_FIXED}, indent=1))
     m = regress(apply_mle(milb, fac))
+    c10 = level_step(m)
+    (DATA / "b4_k.json").write_text(json.dumps({"k": ks, "k_stab": K_STAB, "k_fixed": K_FIXED, "aging_drift": drift,
+                                                "pairs": pairs.kind.value_counts().to_dict(), "C10": c10}, indent=1, default=float))
+    print("C10:", json.dumps({k: {c: (round(v[c]["diff"], 4), round(v[c]["se"], 4), v[c]["pass"]) for c in COMPS} for k, v in c10.items()}))
     keep = (["player_id", "season", "level", "league_id", "PA", "AB", "BIP"] + ["neutral_" + c for c in COMPS]
             + ["mle_" + c for c in COMPS] + ["reg_" + c for c in COMPS])
     m[keep].to_parquet(DATA / "mle.parquet", index=False)
