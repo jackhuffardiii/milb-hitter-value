@@ -102,6 +102,9 @@ button.btn:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surfa
 .answer { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px; margin-top: 16px; }
 .answer .big { font: 700 44px/1 var(--serif); letter-spacing: -.5px; }
 .answer .big small { font: 400 15px var(--sans); color: var(--ink-2); letter-spacing: 0; margin-left: 8px; }
+.why { margin-top: 12px; border-top: 1px solid var(--line-2); padding-top: 8px; }
+.why summary { cursor: pointer; color: var(--accent); font-size: 14px; padding: 6px 0; min-height: 32px; }
+.why[open] summary { margin-bottom: 8px; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 16px; margin: 16px 0 0; }
 .kv div { border-top: 1px solid var(--line); padding-top: 6px; }
 .kv dt { font-size: 13px; color: var(--ink-2); }

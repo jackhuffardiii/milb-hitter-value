@@ -4,13 +4,17 @@ Players: 2026 'final' rows of valuations.parquet. Rerunnable after any upstream 
 Dollar values are exported in millions of USD (rounded) so JSON stays small.
 """
 import datetime
+import io
 import json
 import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 
-from pipeline.common import DATA, MANUAL, ROOT, api_get
+from pipeline.b11_batted import BBT
+from pipeline.common import DATA, MANUAL, RAW, ROOT, _get, api_get
 
 SITE = ROOT / "site" / "data"
 SEASON = 2026
@@ -46,6 +50,74 @@ def data_through():
         if len(d):
             last = max(last, str(d.game_date.max())[:10])
     return last
+
+
+HAND = {"vl": "LHP", "vr": "RHP"}
+# Savant pitch_type codes by family; Savant minors only covers tracked parks (AAA, Low-A FSL)
+PITCH_FAMILY = {"Fastball": "FF|SI|FC|FA", "Breaking": "SL|ST|SV|CU|KC|CS", "Offspeed": "CH|FS|FO|SC|KN|EP"}
+SAVANT_SPLITS = RAW / "savant_splits"
+
+
+def hand_splits(seasons):
+    """(player_id, season, level) -> [vs LHP, vs RHP] lines, Stats API statSplits vl/vr, one league-wide call per sport-season."""
+    rows = []
+    for y in seasons:
+        for sid, lv in SPORT_LEVEL.items():
+            for x in api_get("stats", stats="statSplits", group="hitting", sitCodes="vl,vr", sportId=sid, season=y,
+                             playerPool="all", limit=10000)["stats"][0]["splits"]:
+                t = x["stat"]
+                rows.append(dict(player_id=x["player"]["id"], season=y, level=lv, hand=HAND[x["split"]["code"]], PA=t["plateAppearances"],
+                                 AB=t["atBats"], H=t["hits"], TB=t["totalBases"], BB=t["baseOnBalls"], HBP=t["hitByPitch"],
+                                 SF=t["sacFlies"], SO=t["strikeOuts"], HR=t["homeRuns"]))
+    d = pd.DataFrame(rows).groupby(["player_id", "season", "level", "hand"], as_index=False).sum()
+    d["AVG"], d["SLG"] = d.H / d.AB, d.TB / d.AB
+    d["OBP"] = (d.H + d.BB + d.HBP) / (d.AB + d.BB + d.HBP + d.SF)
+    d["ISO"], d["K"], d["BBp"] = d.SLG - d.AVG, d.SO / d.PA, d.BB / d.PA  # same K%/BB% definitions as milb_player_seasons
+    return d
+
+
+def savant_family(season, fam):
+    """Savant minors batter rows for one pitch family and season, grouped by player; cached CSV."""
+    f = SAVANT_SPLITS / f"{season}_{fam}.csv"
+    if not f.exists():
+        url = (f"https://baseballsavant.mlb.com/statcast-search-minors/csv?all=true&hfPT={PITCH_FAMILY[fam].replace('|', '%7C')}%7C"
+               f"&hfGT=R%7C&hfSea={season}%7C&player_type=batter&group_by=name&minors=true&min_pitches=0&min_results=0&min_pas=0"
+               f"&sort_col=pitches&sort_order=desc")
+        SAVANT_SPLITS.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(_get(url).content)
+    d = pd.read_csv(f, encoding="utf-8-sig")
+    assert len(d) < 25000, f"Savant row cap hit on {f.name}"
+    return d.assign(season=season, family=fam)
+
+
+def savant_family_bip(season, fam, month):
+    """Tracked balls in play (batter, EV) for one pitch family and month; one month keeps each query under Savant's row cap."""
+    f = SAVANT_SPLITS / f"bip_{season}_{month:02d}_{fam}.parquet"
+    if not f.exists():
+        start = f"{season}-{month:02d}-01"
+        end = (pd.Timestamp(start) + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
+        url = (f"https://baseballsavant.mlb.com/statcast-search-minors/csv?all=true&hfPT={PITCH_FAMILY[fam].replace('|', '%7C')}%7C"
+               f"&hfGT=R%7C&hfSea={season}%7C&player_type=batter&game_date_gt={start}&game_date_lt={end}&type=details&minors=true&hfBBT={BBT}")
+        txt = _get(url).content.decode("utf-8-sig")
+        d = pd.read_csv(io.StringIO(txt), low_memory=False) if txt.strip() else pd.DataFrame(columns=["batter", "launch_speed", "launch_angle", "des", "bb_type", "type"])
+        assert len(d) < 24000, f"Savant row cap hit on {f.name}"
+        d = d[(d.type == "X") & d.launch_speed.notna() & d.launch_angle.notna()]
+        d = d[~d.des.fillna("").str.contains(r"\bbunt", regex=True) & ~d.bb_type.fillna("").str.contains("bunt")]  # same BIP filter as B11
+        SAVANT_SPLITS.mkdir(parents=True, exist_ok=True)
+        d[["batter", "launch_speed"]].to_parquet(f, index=False)
+        time.sleep(0.2)
+    return pd.read_parquet(f).astype({"batter": "Int64", "launch_speed": float}).assign(season=season, family=fam)
+
+
+def pitch_splits(seasons):
+    """(player_id, season) -> one row per pitch family: pitches seen, share of all pitches, AVG, SLG, wOBA, whiff%, avg EV, EV90."""
+    d = pd.concat([savant_family(y, fam) for y in seasons for fam in PITCH_FAMILY], ignore_index=True)
+    d["whiff"] = d.whiffs / d.swings.where(d.swings > 0)
+    jobs = [(y, fam, mo) for y in seasons for fam in PITCH_FAMILY for mo in range(3, 11)]
+    with ThreadPoolExecutor(4) as ex:  # same concurrency cap as B11
+        bip = pd.concat(list(ex.map(lambda j: savant_family_bip(*j), jobs)), ignore_index=True)
+    ev90 = bip.groupby(["batter", "season", "family"]).launch_speed.quantile(0.9).rename("ev90").reset_index()
+    return d.merge(ev90, left_on=["player_id", "season", "family"], right_on=["batter", "season", "family"], how="left")
 
 
 def dump(path, obj):
@@ -167,6 +239,8 @@ def main():
     dg = dg[(dg.fit == "final") & (dg.season == SEASON)]
     pt = pd.read_parquet(DATA / "position_transition.parquet").query("cutoff == 2017")
     tm = teams()
+    seasons = range(SEASON - 2, SEASON + 1)
+    hs, ps = hand_splits(seasons), pitch_splits(seasons)
     THROUGH = data_through()
 
     # sort for rank and org
@@ -216,6 +290,10 @@ def main():
     mle_by = {k: g for k, g in mle[mle.season == SEASON].groupby("player_id")}
     ppk_by = {k: g for k, g in ppk[ppk.season == SEASON].groupby("player_id")}
     bb_by = {k: g for k, g in bb[bb.season >= SEASON - 1].groupby("player_id")}
+    hs_by = {k: g for k, g in hs.groupby("player_id")}
+    ps_by = {k: g for k, g in ps.groupby("player_id")}
+    lv_rank = {l: i for i, l in enumerate(LEVEL_ORDER)}
+    fam_rank = {f: i for i, f in enumerate(PITCH_FAMILY)}
     dg_by = {k: g for k, g in dg.groupby("player_id")}
     drivers_target = lambda g, tgt: [dict(family=y.family, c=r(y.contribution, 3), phrase=y.phrase, sup=int(bool(y.suppressed)))  # noqa: E731
                                      for y in g[g.target == tgt].sort_values("rank").itertuples()]
@@ -256,6 +334,15 @@ def main():
             for y in g.sort_values("season", ascending=False).itertuples():
                 bbl.append(dict(season=int(y.season), level=y.level, n=int(y.n_bip_tracked), ev=r(y.avg_ev, 1), ev90=r(y.ev90, 1), hh=r(y.hard_hit_pct, 3),
                                 la=r(y.avg_la, 1), sweet=r(y.sweet_spot_pct, 3), barrel=r(y.barrel_pct, 3), share=r(y.share_bip_tracked, 2)))
+        g = hs_by.get(pid)
+        hand = [] if g is None else [
+            dict(season=int(y.season), level=y.level, hand=y.hand, PA=int(y.PA), AVG=r(y.AVG), OBP=r(y.OBP), SLG=r(y.SLG), ISO=r(y.ISO), K=r(y.K), BB=r(y.BBp))
+            for y in g.assign(lv=g.level.map(lv_rank)).sort_values(["season", "lv", "hand"], ascending=[False, True, True]).itertuples()]
+        g = ps_by.get(pid)
+        pitch = [] if g is None else [
+            dict(season=int(y.season), family=y.family, n=int(y.pitches), share=r(y.pitch_percent / 100), PA=r(y.pa, 0), AVG=r(y.ba), SLG=r(y.slg),
+                 wOBA=r(y.woba), whiff=r(y.whiff), ev=r(y.launch_speed, 1), ev90=r(y.ev90, 1))
+            for y in g.assign(fr=g.family.map(fam_rank)).sort_values(["season", "fr"], ascending=[False, True]).itertuples()]
         dd = dg_by.get(pid)
         pl = ply.loc[pid] if pid in ply.index else None
         card = dict(
@@ -267,7 +354,7 @@ def main():
                      draft=None if f.international or pd.isna(f.pick_overall) else dict(year=r(f.draft_year, 0), round=r(f.round_num, 0), pick=r(f.pick_overall, 0),
                                                                                        bonus=r(f.signing_bonus, 0)),
                      international=bool(f.international)),
-            hist=hist, chain=chain,
+            hist=hist, hand=hand, pitch=pitch, chain=chain,
             blend=None if x.group != "stat" else dict(K=r(f.blend_K), BB=r(f.blend_BB), ISO=r(f.blend_ISO),
                                                       reg_K=r(f.reg_K), reg_BB=r(f.reg_BB), reg_ISO=r(f.reg_ISO),
                                                       contact=r(f.blend_contact_rate)),  # BABIP is display only (S7 v1.1)
