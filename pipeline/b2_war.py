@@ -1,4 +1,4 @@
-"""B2 simplified WAR (S4, A2, A3, A4, C1, D7, Q2, X2). MLB hitter-seasons 2005-2026, WAR = batting (park-adjusted)
+"""B2 simplified WAR (S4, A2, A3, A4, A14, C1, D7, Q2, X2). Run values from BaseRuns partial derivatives (A14). MLB hitter-seasons 2005-2026, WAR = batting (park-adjusted)
 + baserunning (wSB + GIDP) + fielding (bWAR runs_field) + positional + replacement runs, over runs-per-win.
 Column `owar` holds this full WAR (name kept from the offense-only version; `fld_runs` is the fielding part).
 Also the 6-year WAR target per player.
@@ -35,6 +35,22 @@ def _events(d):
                          "uBB_HBP": d.BB - d.IBB + d.HBP, "out": d.AB - d.H + d.SF + d.SH})
 
 
+# A14: d(A, B, C, D)/d(event) for BaseRuns, A = H + uBB + HBP - HR + .5 IBB, B = 1.02 (1.4 TB - .6 H - 3 HR + .1 (uBB + HBP)),
+# C = outs, D = HR. BsR = A B / (B + C) + D.
+BSR_D = {"1B": (1, 1.02 * 0.8, 0, 0), "2B": (1, 1.02 * 2.2, 0, 0), "3B": (1, 1.02 * 3.6, 0, 0), "HR": (0, 1.02 * 2.0, 0, 1),
+         "uBB_HBP": (1, 1.02 * 0.1, 0, 0), "out": (0, 0, 1, 0)}
+
+
+def baseruns_values(r):
+    """A14: marginal run value of each event = partial derivative of BaseRuns at league totals `r` (a Series of event sums)."""
+    tb = r["1B"] + 2 * r["2B"] + 3 * r["3B"] + 4 * r.HR
+    h = r["1B"] + r["2B"] + r["3B"] + r.HR
+    A = r["1B"] + r["2B"] + r["3B"] + r.uBB_HBP + 0.5 * r.IBB
+    B = 1.02 * (1.4 * tb - 0.6 * h - 3 * r.HR + 0.1 * r.uBB_HBP)
+    C = r.out
+    return np.array([dA * B / (B + C) + A * (dB * C - B * dC) / (B + C) ** 2 + dD for dA, dB, dC, dD in (BSR_D[e] for e in EVENTS)])
+
+
 def linear_weights():
     hit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "hitting"), YEARS) for r in rs])
     pit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "pitching"), YEARS) for r in rs])
@@ -44,14 +60,14 @@ def linear_weights():
     hit.columns = ["season", "team_id", "AB", "H", "2B", "3B", "HR", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP"]
     pit["IP"] = pit["inningsPitched"].map(_ip)
     ev = _events(hit)
-    X, y = ev[EVENTS].to_numpy(), hit.R.to_numpy()
-    beta = np.linalg.lstsq(X, y, rcond=None)[0]  # pooled OLS, no intercept
     hit = hit.join(ev[["1B", "uBB_HBP", "out"]])
     lg = hit.groupby("season")[["AB", "H", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP"] + EVENTS].sum()
     lg["IP"] = pit.groupby("season").IP.sum()
     rows = []
     for s, r in lg.iterrows():
-        rv = beta * r.R / (r[EVENTS].to_numpy() @ beta)  # scale so predicted league runs == actual
+        beta = baseruns_values(r)
+        rv = beta * r.R / (r[EVENTS].to_numpy() @ beta)  # scale so predicted league runs == actual (absolute values)
+        rv[5] -= r.R / r.out  # above-average out value (absolute out minus runs per out): league LW sum to 0, RE24 convention
         w = rv[:5] - rv[5]
         denom = r.AB + r.BB - r.IBB + r.SF + r.HBP
         obp = (r.H + r.BB + r.HBP) / (r.AB + r.BB + r.HBP + r.SF)

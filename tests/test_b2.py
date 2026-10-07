@@ -69,3 +69,10 @@ def test_bsr_present_and_league_wsb_zero():
 
 def test_acuna_2023_wsb():
     assert W[(W.player_id == 660670) & (W.season == 2023)].wSB.iloc[0] > 5
+
+
+def test_baseruns_weight_ratios():  # A14: within 10% of standard wOBA ratios (2B 1.42, 3B 1.80, HR 2.30 vs 1B)
+    rel = lambda e: (LW[f"rv_{e}"] - LW.rv_out) / (LW.rv_1B - LW.rv_out)  # noqa: E731
+    for e, want in {"2B": 1.42, "3B": 1.80, "HR": 2.30}.items():
+        assert ((rel(e) / want - 1).abs() < 0.10).all(), e
+    assert LW.wOBA_scale.between(1.1, 1.35).all()
