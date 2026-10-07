@@ -16,7 +16,7 @@ def t():
 def test_top100_shape(t):
     for y, g in t.groupby("list_year"):
         assert len(g) == 100 and sorted(g["rank"]) == list(range(1, 101)), y
-    assert set(t.list_year) == {2014, 2015, 2016, 2017, 2018}
+    assert set(t.list_year) == set(range(2014, 2021))  # 2019-20 added for C12 (v1.1)
     assert t.source_url.notna().all() and t.source.isin(["ba", "pipeline"]).all()
 
 
@@ -34,7 +34,8 @@ def test_ids_unique_per_year_and_join(t):
 
 def test_backtest_json():
     d = json.load(open(DATA / "backtest.json"))
-    assert {"C2", "C3", "C4"} <= set(d)
+    assert {"C2", "C3", "C4", "C12"} <= set(d)
+    assert set(d["C12"]["ev_vs_war_thru_2026"]["all"]) == {"2018", "2019"}
     c2 = d["C2"]["primary_excl_censored"]
     vals = [c2["pooled"]["spearman_model"], c2["pooled"]["spearman_list"]]
     vals += [v[k] for v in c2["per_year"].values() for k in ("spearman_model", "spearman_list")]
