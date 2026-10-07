@@ -173,9 +173,20 @@ def curve(est, X):
     return prev * h, 1 - S[:, -1]
 
 
-def _reach9(df):
+def _reach9(df, h=T_MAX):
     lag = (df.debut_year - df.season).to_numpy(float)
-    return (~np.isnan(lag) & (lag <= T_MAX)).astype(int)
+    return (~np.isnan(lag) & (lag <= h)).astype(int)
+
+
+def horizon(df):
+    """Years of debut outcome observed after s, capped at T_MAX (2018-19 holdout rows: 8 and 7, C12)."""
+    return np.minimum(T_MAX, LAST_OBS - df.season.to_numpy())
+
+
+def p_within(pred, h):
+    """P(debut within h years of s) from the hazard columns, so a holdout is scored on the horizon it has observed."""
+    pdeb = pred[[f"p_debut_t{t}" for t in range(1, T_MAX + 1)]].to_numpy()
+    return (pdeb * (np.arange(1, T_MAX + 1)[None, :] <= np.asarray(h)[:, None])).sum(axis=1)
 
 
 def _calibration(y, p):
@@ -415,7 +426,8 @@ def holdout_metrics(df, pred, train_ids):
     out = {}
     for name, sel in (("all", np.ones(len(d), bool)), ("player_disjoint", ~d.player_id.isin(train_ids).to_numpy())):
         x = d[sel & ~d.debuted.to_numpy(bool)]
-        y, p = _reach9(x), x.p_mlb.to_numpy()
+        h = horizon(x)  # 9 for 2013-17; 2018-19 are scored on reach by 2026, not the unobserved 9-year P(MLB)
+        y, p = _reach9(x, h), p_within(x, h)
         o = {"n": int(len(x)), "logloss": log_loss(y, np.clip(p, 1e-6, 1 - 1e-6)), "brier": brier_score_loss(y, p),
              "auc": roc_auc_score(y, p), "calibration": _calibration(y, p)}
         m = _war_mask(x, 9999)

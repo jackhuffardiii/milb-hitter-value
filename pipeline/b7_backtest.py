@@ -20,6 +20,7 @@ from sklearn.metrics import log_loss
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from pipeline.b6_models import horizon, p_within
 from pipeline.common import DATA, MANUAL
 
 LEVELS = ["a-", "a", "a+", "aa", "aaa", "rk"]
@@ -156,7 +157,7 @@ def c12(hold, top, b6m):
         for y, g in d.groupby("season"):
             o[int(y)] = {"n": int(len(g)), "spearman_model": sp(g.ev_war, g.war_thru_2026),
                          "spearman_baseline": sp(g.b_ev, g.war_thru_2026),
-                         "logloss_model": float(log_loss(g.reached, np.clip(g.p_mlb, 1e-6, 1 - 1e-6), labels=[0, 1])),
+                         "logloss_model": float(log_loss(g.reached, np.clip(p_within(g, horizon(g)), 1e-6, 1 - 1e-6), labels=[0, 1])),
                          "logloss_baseline": float(log_loss(g.reached, g.b_p, labels=[0, 1]))}
     fr = h[(h.season == 2018) & h.reached & ~h.censored & ~h.pre2005]
     out["war6_2018_complete_windows_fast_risers"] = {"n": int(len(fr)), "spearman_war_mean": sp(fr.war_mean, fr.war_6yr),
