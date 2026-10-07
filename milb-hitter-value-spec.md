@@ -2,7 +2,7 @@
 
 A stats-based projection system that puts a surplus dollar value on every A through AAA hitter, with a full audit trail from minor league line to dollars. It exists so I can cite a concrete, defensible number when an MLB questionnaire or job application asks me to value a player.
 
-Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S14 added after PBP tracking coverage check.
+Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S14 added after PBP tracking coverage check. v1.1 revision (audit 2026-10-06, user decisions, plan in docs/fix-plan.md): S16, A13-A16, C10-C12, Q17, R0-R10; S6, S7, S8, S10, A7, A12 amended. Pre-registered before any rerun.
 
 ## Problem
 
@@ -30,6 +30,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **S12** 2026 offseason snapshot run and published.
 - **S13** Batted-ball context on player cards: avg and 90th pct exit velocity, hard-hit rate, launch angle, barrel rate, where tracked (AAA 2023+, Low-A FSL parks 2021+). Display only; no effect on the projection.
 - **S14** Batted-ball input adjustment: for tracked AAA and Low-A FSL hitters, replace observed ISO and BABIP with expected values from EV/LA, blended toward observed by sample size, before they enter the MLE and model chain. Ships only if it passes C8.
+- **S16** Players who already debuted but are still rookie-eligible (under 130 MLB AB) are kept on the board with P(MLB) = 1 and a real control clock: control year 1 is their debut season, years before the snapshot+1 are sunk, remaining WAR = E[WAR] x unused control-year shares. Their MLB samples are not inputs. They never appear in training rows (debut_year <= s is excluded), so P(MLB) and ETA learn only from players not yet in MLB. Added v1.1.
 - **S15** Extra model features, added 2026-10-06: (1) contact rate (1 - whiffs/swings) and swing rate; (2) batted-ball mix GB%, FB%, LD%, PU% from repo out and hit types; (3) speed: SB attempt rate per time on first, triples rate; (4) position mix: share of games at SS, CF, C; (5) progression pace in games: games at current level, career games below current level per level climbed (ascent pace), levels climbed this season, repeated level (pace partly encodes org scouting judgment; stated on the methodology page); (6) height and weight. Each kept only if it improves train-era CV (C9).
 
 ## Explicitly out of scope
@@ -55,6 +56,10 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **A9** Offseason snapshot, rerun by hand. No scheduler.
 - **A11** Tracking data improves inputs, not the model. No 2005 to 2017 training row has EV/LA, and 2021+ players have no 6-year outcomes until about 2030, so EV/LA cannot be a model feature. S14 sharpens the ISO/BABIP the trained model already uses.
 - **A12** WAR model selection ranks candidates by Spearman of predicted vs realized WAR among reached players (train-era CV), not RMSE, because valuation is a ranking problem. Changed 2026-10-06 after B7: RMSE selection picked a LightGBM whose noisy ranks lost to the naive baseline; train-era CV favored ridge.
+- **A13** P(MLB) and ETA come from one discrete-time hazard model of debut: one row per snapshot x year t = 1..9 after s while not yet debuted and observed (s + t <= 2026). P(MLB) = 1 - prod(1 - h_t); P(debut = s + t) from the same curve. Censored 2018-2025 snapshots enter the final fit for their observed years, so post-2021 data shapes the early hazards. ETA >= 1 by construction. Replaces the separate P(MLB) classifier, Poisson ETA, and Platt recalibration (calibration applied only if CV shows a gap). v1.1.
+- **A14** Batting run values per season are the partial derivatives of BaseRuns at league totals (replaces team-run OLS, which overweighted HR and 3B). Still our own WAR (A4). v1.1.
+- **A15** Surplus is floored at 0 per control year (demote/release in pre-arb, non-tender in arb) and integrated over the player's WAR distribution; one draw per player spread across years by the control-year profile. v1.1.
+- **A16** WAR uncertainty: ridge mean plus a variance model of the OOF residual scale from the features; distribution = mean + scale x pooled standardized residual quantiles (replaces prediction-quintile residual bins, which gave equal spread to equal means). v1.1.
 - **A10** Projected MLB position from a historical transition matrix (MiLB position mix to MLB primary position), so shortstops slide down the spectrum at realistic rates.
 
 ## Data
@@ -84,6 +89,9 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **C6** 2026 top 50 passes a manual smell test against current public top-100 lists, with disagreements explained by drivers.
 - **C8** S14 gate: on AAA 2023 to 2025, expected ISO/BABIP predict next-season ISO/BABIP better (lower RMSE) than observed, and AAA batted-ball metrics predict MLB results for 2023 to 2025 arrivals at least as well as AAA outcomes. If it fails, S14 is dropped and the methodology page reports the null result.
 - **C9** S15 gate: each feature group is kept only if adding it improves train-era (s <= 2012) GroupKFold OOF metrics: P(MLB) log loss or ev Spearman, without worsening the other. Decided before any holdout rerun; the 2013 to 2017 holdout is evaluated once afterward.
+- **C10** Level-step test (v1.1): for players with a full season (>= 300 PA, one level) at L in s and at L+1 in s+1, mean MLE change minus mean change of same-level repeaters (same age bucket) is within +-1 SE for K, BB, ISO at A->A+, A+->AA, AA->AAA.
+- **C11** WAR 10-90 coverage 0.80 +- 0.05 on s <= 2012 CV within each age-vs-level tercile, level group, and predicted-WAR quintile (v1.1).
+- **C12** Fresh holdout 2018-19 snapshots (v1.1), evaluated once: P(MLB) log loss and calibration deciles; Spearman of EV vs WAR accumulated through 2026 within each snapshot year; 2018 six-year WAR on the complete-window subset only, labeled fast risers.
 - **C7** Site is static, works at phone width, no horizontal scroll.
 
 ## Open questions and assumptions
@@ -104,6 +112,8 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **Q13** Confirmed 2026-10-06: Baseball Savant minors CSV serves AAA and FSL batted balls for 2021 to 2026 with real event outcomes.
 - **Q14** Cards flag when S14 was applied, since tracking coverage depends on organization (FSL affiliates only at Low-A).
 - **Q15** Height and weight are current values from the people endpoint, not as of each snapshot. Mild look-ahead leak; stated on the methodology page.
+- **Q17** Career-history features (pro_years, career PA, pace) use backfilled 2000-2004 MiLB seasons; snapshots still start in 2005. Draft records are pulled back to the earliest year served so pre-2005 draftees are not flagged as having no draft record. v1.1.
+- **Q18** Holdout history (v1.1): 2013-2017 was evaluated four times before v1.1 (B7, B6r, B8 revision, B14) and A12 was chosen after a holdout result. All v1.1 decisions are made on s <= 2012 CV; 2013-17 gets one more (5th) look and 2018-19 its first, both reported as they come out. Expected directions are pre-registered in docs/fix-plan.md.
 - **Q16** 2025 contact and swing rates are unavailable. The 2026 snapshot uses 2026 values alone (no 2-year blend), the same treatment as 2021. No game-feed pull (~3 GB) for one prior season.
 
 ## Build order
@@ -122,3 +132,11 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **B8** Surplus $ model. (S)
 - **B9** Static site and methodology page. (M)
 - **B10** 2026 snapshot run, smell test (C6), publish. (S)
+
+## v1.1 revision (audit 2026-10-06)
+
+Amendments: S6 regresses each rate toward its source league-season mean before translating, and translation pairs add cross-season pairs (L in s -> L+1 in s+1, >= 300 PA each) with aging removed by repeater drift. S7 drops BABIP features (train-era ablation: log loss +0.0009, Spearman -0.0015; MLE BABIP r = .11 with next-year MLB BABIP); BABIP stays on cards as display. S7 position transition matrix is fit per fit cutoff (no holdout leak). S8 prior uses the A13 hazard form. S10 uses A13 arrival probabilities and A15. A7 per A16. A12 final WAR model trains on s <= 2015 (under 2% censored).
+
+Pre-registered expected directions: lower-level MLEs rise relative to AAA; HR-heavy hitters' WAR targets fall slightly; already-debuted players' EV rises (p = 1) while their remaining control years fall; prospect ETAs shorten by about half a year vs v1 B8; EV rises most for high-spread (young, low-level) players under the floor; P(MLB) at A/A+ for 2026 moves toward the post-2021 base rate; holdout Spearman changes are expected within +-0.03 and are reported whichever way they go.
+
+- **R0** Pre-registration (this section). **R1** Data/hygiene (Q17, cache refresh). **R2** A14. **R3** S6/C10. **R4** features (S16 exclusion, BABIP, transition leak, Q17). **R5** A13, A16, A12 cutoff. **R6** S10/A15/S16. **R7** B11 rerun. **R8** C12 code. **R9** single evaluation. **R10** site and methodology disclosures.

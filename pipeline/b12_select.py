@@ -14,7 +14,7 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import GroupKFold
 
 from .b5_features import S15_GROUPS
-from .b6_models import _lgb_cv, _linear, _predict, stat_X
+from .b6_models import _lgb_cv, _linear, _predict, for_fit, stat_X
 from .common import DATA
 
 LL_TOL, SP_TOL = 0.002, 0.005
@@ -39,7 +39,7 @@ def evaluate(df, cols, wt):
 
 def main():
     f = pd.read_parquet(DATA / "features.parquet")
-    df = f[(f.group == "stat") & (f.season <= 2012)].reset_index(drop=True)
+    df = for_fit(f[(f.group == "stat") & (f.season <= 2012) & ~f.debuted], "backtest").reset_index(drop=True)  # S16, v1.1
     wt = pd.read_parquet(DATA / "war_target.parquet").set_index("player_id")
     res = {"baseline": evaluate(df, [], wt)}
     b = res["baseline"]

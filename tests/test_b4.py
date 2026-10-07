@@ -39,13 +39,13 @@ def test_pooled_all_years_directions(fac):
 
 
 def test_regressed_between_mle_and_prior(mle):
-    # prior = level-season PA-weighted MLE mean; recompute via any row: reg is a convex combo so lies between
+    # prior = source league-season PA-weighted MLE mean (S6 v1.1); reg is a convex combo so lies between
     for c in COMPS:
         d = mle.dropna(subset=["mle_" + c, "reg_" + c])
-        prior = d.groupby(["level", "season"]).apply(
+        prior = d.groupby(["level", "league_id", "season"]).apply(
             lambda g: np.average(g["mle_" + c], weights={"K": g.PA, "BB": g.PA, "ISO": g.AB, "BABIP": g.BIP}[c].clip(lower=1e-9)),
             include_groups=False)
-        p = prior.reindex(pd.MultiIndex.from_frame(d[["level", "season"]])).values
+        p = prior.reindex(pd.MultiIndex.from_frame(d[["level", "league_id", "season"]])).values
         lo, hi = np.minimum(d["mle_" + c], p) - 1e-9, np.maximum(d["mle_" + c], p) + 1e-9
         assert ((d["reg_" + c] >= lo) & (d["reg_" + c] <= hi)).all()
 
@@ -79,3 +79,21 @@ def test_out_of_sample_mle_beats_raw(mle):
         wins += r_mle < r_raw
     print(f"n={len(d)} RMSE (raw, reg_MLE): {out}")
     assert wins >= 3
+
+
+def _c10():
+    import json
+    return json.loads((DATA / "b4_k.json").read_text())["C10"]
+
+
+def test_c10_cross_pairs_shrink_level_step_gap():
+    """S6 v1.1: same+cross pairs cut the mean |mover - repeater| MLE change; v1 (same-season only) measured .0055."""
+    c = _c10()
+    gaps = [abs(v[k]["diff"]) for v in c.values() for k in ("K", "BB", "ISO", "BABIP")]
+    assert np.mean(gaps) < 0.0045
+
+
+@pytest.mark.xfail(reason="C10 fails 6 of 12 cells (v1: 10): BB too harsh at every step (+.0023 to +.0035), AA->AAA ISO "
+                          "+.0073 and BABIP +.0097. The +-1 SE band also fails ~1/3 of cells for an unbiased translation.", strict=True)
+def test_c10_all_cells_within_1se():
+    assert all(v[k]["pass"] for v in _c10().values() for k in ("K", "BB", "ISO", "BABIP"))

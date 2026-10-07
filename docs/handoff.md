@@ -358,3 +358,66 @@ Run: `python run.py` (209 s). `pipeline/b2_war.py::_fielding()` reads Baseball-R
 - Model effect (target now includes defense, so old and new metrics measure different targets): train CV WAR Spearman ridge 0.3354 -> 0.2946 (ridge still chosen over LightGBM 0.2552). Holdout stat: ev Spearman 0.2162 -> 0.1652, WAR reached-only Spearman 0.3712 -> 0.3082, q10-q90 coverage 0.8006 -> 0.7719. P(MLB) unchanged. C3 still passes (Spearman 0.1652 vs naive 0.1456). C2 pooled: model 0.266 vs Pipeline 0.374, diff -0.109, 90% CI [-0.234, 0.010] (was -0.138, CI excluded 0). C9 table moves by < 0.002 per group, same keep decisions (S15_KEPT unchanged).
 - Reading: fielding is harder to predict from minor league batting lines, so accuracy against the defense-inclusive target is lower, but the model now trails the Pipeline list by less on that target. 2026 board: projected CF +0.50 WAR and SS +0.36 on average, other positions ~0; top 15 unchanged in membership except Voit (17 -> 14); Kepley 31 -> 16, Quintero 34 -> 23.
 - Spec updated (S4, X2, A4) as a recorded user decision.
+
+
+## v1.1 revision (audit 2026-10-06; plan docs/fix-plan.md; spec S16, A13-A16, C10-C12, Q17, Q18)
+
+Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season API answers, otherwise the cache is permanent). Full rebuild from cache 2026-10-06: b1 19, b3 1, b2 1, b4 7, b5 1, b12 31, b6 29, b11 48, b7 3, b8 5 (b9 22); `pytest`: 105 passed, 2 xfailed (C4, C10). Order of work R0-R10, one commit each (R7 had no code change).
+
+### R1 data (b1, common, run.py)
+- `data/milb_history.parquet` (new; Q17): player_id x season x level x league_id, G, PA for MiLB 2000-2004 from the Stats API per team (sportIds 11-16; repo has no pre-2005 files). Career history only, never snapshots. AAA rows include the Mexican League (league 125, filtered in b5).
+- `draft.parquet` now 1990-2026 (47,354 picks); `players.parquet` gains `pulled_on` (oldest people-cache date) and grows to 53,504 players (1990+ draftees).
+- `common.api_get` caches as before; `cache_file(path, **params)` exposes the cache path; with `common.REFRESH` (set by `run.py --refresh`) answers that can change (paths starting `people`, or season == 2026) are re-fetched once per run.
+- b5 draft record is now the latest with draft_year <= s. `international` means "no draft record (1990+) on or before s" (international signee or undrafted FA). Train-era rows flagged international that were actually 2000-04 draftees: 4,806 before the fix.
+
+### R2 WAR (b2; A14)
+- Run values per season = partial derivatives of BaseRuns at league totals (A = H + uBB + HBP - HR + .5 IBB, B = 1.02(1.4 TB - .6 H - 3 HR + .1(uBB + HBP)), C = outs, D = HR), scaled so league runs match, then the out value is set above average (absolute out - R/O; league linear weights sum to 0, RE24 convention). Ratios vs 1B: 2B 1.38-1.40, 3B 1.77-1.81, HR 2.22-2.31, BB .80; wOBA scale ~1.2 (was 1.57, HR/1B 2.78 under the old pooled OLS).
+- C1 (n=5,775): r offense-only vs bWAR offense 0.9689 -> 0.9798; full r 0.9587 (partly shared by construction, fielding is bWAR's).
+
+### R3 translations (b4; S6, C10)
+- Pairs: same-season (>= 50 PA both) plus cross-season (L in s >= 300 PA -> L+1 in s+1 >= 300 PA), 11,735 + 4,810. Cross-season upper rates are divided by repeater aging drift by age bucket (<=21.5, 23.5, 25.5, older; `b4_k.json` aging_drift).
+- Regression prior is now the source league-season mean MLE (was level-season). Because the chain factor is multiplicative this equals "regress at source, then translate"; it differs little from v1.
+- C10 (in `b4_k.json`, `level_step()`): fails 6 of 12 cells (v1 same-season only: 10 of 12; cross-only: 7 of 12 with AAA->MLB ISO 0.855 from MLB survivor selection, so same+cross kept). Remaining gaps: BB +.0023 to +.0035 at every step, AA->AAA ISO +.0073 and BABIP +.0097. Note: movers are selected on a good season s, which biases C10 toward a negative gap, so the true harshness is if anything larger. The pre-registered +-1 SE band fails ~1/3 of cells even for an unbiased translation; recorded, not changed. Pooled AAA->MLB factors: K 1.239, BB .764, ISO .757, BABIP .886.
+
+### R4 features (b5, b12; S16, S7, Q17, C9)
+- `features.parquet` gains `debuted` (debut_year <= s; 3,000 train-era, 1,259 censored, 147 score rows) and `p_C_bt, p_SS_bt, p_CF_bt, exp_pos_runs_bt` (transition matrix fit on s<=2012 for the backtest fit; `b6.for_fit(df, 'backtest')` swaps them in). `eta_years` = debut - s (>= 1) for reached players not yet in MLB, NaN for debuted rows.
+- `position_transition.parquet` gains `cutoff` (2012 | 2017). B9 uses cutoff 2017.
+- pro_years, career_milb_pa and pace features use 2000-04 history (median pro_years now 4 in every train season; was 1, 2, 3, 4 for 2005-08).
+- C9 rerun (s<=2012, debuted rows out, BABIP out): baseline logloss .3968 / ev Spearman .0855 (lower than v1's .14 because debuted rows were easy positives). Kept: contact, speed, posmix, body; dropped: batted, pace. `S15_KEPT` updated; contact's gain is within noise but the rule keeps it.
+
+### R5 models (b6; A13, A16, A12, S16, C11)
+- Hazard: person-period rows (snapshot x t = 1..9, s + t <= 2026, stop at debut); features = model features + t, t dummies, t x age_vs_level, t x level_num. CV (s<=2012, 77,290 person-years) logloss linear .0984 vs LightGBM .0989 -> linear. P(MLB) = 1 - S(9); `p_debut_t1..t9` = P(debut = s + t). CV calibration (fully observed rows, GroupKFold) within 4 points in every decile for every fit -> no Platt. Tail (`calibration_check.*.tail`): predicted .90-.98 reach ~6 points less often than predicted; all 118 rows predicted > .99 reached.
+- WAR: ridge (CV Spearman .238 vs LightGBM .198). Training rows: reached, not debuted, uncensored, not pre2005, s <= 2012 (backtest) or s <= 2015 (fit2017, final).
+- Spread (A16): log(|OOF residual| + .05) modeled from SPREAD_FEATS + the WAR prediction (OOF in training); candidates const / ridge / LightGBM by CV pinball (q10/50/90): stat LightGBM, prior ridge. Distribution = mean + war_scale x z, z = 199 centered standardized residual quantiles (`mod['z']`). C11 (CV): stat passes (subgroups .76-.83); prior fails only in the AA/AAA cell (n=18, 12 covered). Residual shape is right-skewed (z q10/50/90 -1.4/-.8/+2.1): CV top quintile realized mean 5.4 vs median 1.4 WAR. Median is miscalibrated in the bottom predicted quintile (16% below q50).
+- Fits: backtest (train s<=2012 -> 2013-17), fit2017 (s<=2017 -> 2018-19, C12), final (hazard s<=2025 with censoring, WAR s<=2015 -> 2018-2026). Debuted rows: p_mlb 1, p_debut 0, eta 0.
+- `predictions.parquet` columns: player_id, season, group, fit, p_mlb, p_debut_t1..t9, eta_mean (conditional on reaching), eta_q10, eta_q90, war_mean, war_scale, war_q10/50/90, ev_war, debuted, low_confidence, chosen_hazard, chosen_war. `b6_metrics.json`: cv_stat, chosen_stat, spread, calibration_check, holdout{stat|prior}_{backtest|fit2017}{all|player_disjoint}.
+- Drivers: P(MLB) = hazard log-odds contributions averaged over t = 1..9 (t terms dropped, interactions folded into their base feature).
+
+### R6 value (b8; S10, A15, S16)
+- `contract_surplus(war_draws, debut_year, snapshot, share, prm)`: per control year max(value - salary, 0), discounted; years <= snapshot are sunk. `value()` averages over the 199 z draws and the hazard debut-year probabilities; ev_surplus = sum_t p_debut_t x E[surplus] = p_mlb x surplus_if_mlb; surplus_qXX are quantiles over draws. Debuted players: p = 1, debut_year from features.
+- New family "Swing and miss" (contact features); "Contact quality" (BABIP) removed.
+- 2026 board: EV rose most for players young for level (+$3.9M mean, vs +$0.9M for the oldest tercile); debuted players +$4.3M. Top 5: Willits, Walcott, De Vries, Made, Jenkins (in MLB).
+
+### R8 backtest (b7, b7_scrape_top100, b7_top100; C12, D8)
+- top100.csv adds Pipeline 2019 and 2020 (52 and 61 hitters matched; 2014-18 rows unchanged; matcher now replaces only scraped years; "pete" nickname added). Unmatched: 2019 Victor Victor Mesa; 2020 Brendan McKay (pitcher-coded), "Alex Kiriloff" (source misspelling, left unmatched per Q12), Jasson Dominguez.
+- backtest.json adds C12, C2.player_disjoint, C3.player_disjoint, C3.v1_population_spearman_model, holdout_looks; backtest_players.parquet adds war_thru_2026, debuted, holdout.
+
+### R9 single evaluation (2013-17: 5th look; 2018-19: first look)
+- C3 passes: logloss .371 vs .447 naive; EV Spearman .106 vs .087 (n=6,552). On v1's population (debuted rows included) Spearman is .160 (v1 .165): the drop vs v1 is the population, not the model. Player-disjoint: .170 vs .147.
+- C2 (2014-18 lists, n=264): model .243 vs Pipeline .370, diff -.127, 90% CI [-.249, -.004] (loses). Player-disjoint n=146: diff -.238.
+- C4 fails: 2013-17 deciles 7-9 under-predict by 6.0, 5.4, 10.3 points; 2018-19 deciles 6, 8, 9 by 7.1, 6.1, 7.0. CV was within 4 points, so this reads as drift toward higher reach rates. Not recalibrated (pre-registered rule is CV-based).
+- C12: P(MLB) logloss .391, AUC .866 (n=2,729), scored as P(debut within the 7-8 observed years) vs reach by 2026 (PR review fix: first pass scored the 9-year P(MLB) against reach by 2026; logloss .3908 -> .3911, no conclusion changed); EV Spearman vs WAR through 2026 ties the naive baseline (2018 .074 vs .078; 2019 .085 vs .083); 2018 complete windows (fast risers, n=258) WAR Spearman .335 vs .262. Lists 2019-20 vs WAR through 2026 (n=113): model .300 vs Pipeline .113, diff +.187, CI [.016, .357]: shorter horizon that rewards quick arrival, small n.
+- Pre-registered directions: lower-level MLEs rose vs AAA (yes); HR-heavy WAR fell (yes, HR/1B weight 2.78 -> 2.3); debuted EV rose (yes, +$4.3M); prospect ETA shortened (yes, 3.52 effective v1 -> 2.64, more than the expected ~0.5); EV rose most for young-for-level (yes); A/A+ P(MLB) moved toward post-2021 rates (a .253 -> .255, a+ .265 -> .287; AAA fell .51 -> .37, unexpected: v1 learned AAA reach rates partly from already-debuted rows); holdout Spearman within +-0.03 (no: -.06, explained by the population change above).
+
+### R10 site (b9, app.js; C6, C7)
+- leaderboard rows add `in_mlb`; cards add `in_mlb {debut, control_years_left}`, `eta` null for debuted, `blend` without BABIP plus `contact`, `people_pulled_on`. method.json adds C10, C12, holdout (new layout), holdout_looks, babip (audit ablation constants), model_choice.spread / calibration_check, people_pulled_on. Methodology prose rewritten for v1.1 (results, revision, translations, models, value, assumptions, limits).
+- C7: no horizontal page scroll at 375 px on index, card, method (checked in the browser pane).
+- C6 rerun vs MLB Pipeline Top 100 (mlb.com/prospects/top100, read 2026-10-06): 76 hitters, 73 matched (Luis Hernández ambiguous; Tyler Bell, Derek Curiel unmatched). 34 of our top 50 are on the list (v1 32); Spearman of our rank vs Pipeline rank .393 (v1 .356). Pipeline top 10 hitters: Made 4, Arias 6, De Vries 3, De Paula 34, Willits 1, Josuar Gonzalez 43, Walcott 2, Rodriguez 9, Emerson 138 (prior; v1 316), Jenkins 5. Draft-prior gap narrowed (Lackey 303 -> 176, Booth top prior). Largest disagreements: international teenagers on the population prior (Gomez, Renteria); Aidan Miller 37 -> 626 (2026 was 14 PA on an AA rehab stint after reaching AAA in 2025; the linear hazard reads a 14-PA season like a washout, -4.3 log-odds from Development pace; no injury data); Holliday and Carlson (A ball, K% heavy). Model higher: Ebel, Davalan, Southisene, Cannarella (young for level or strong K/BB). Verdict: passes, with the injury-season failure documented.
+
+### Open items for v1.2 (not done; would be post-hoc after the R9 look)
+- Injury-shortened seasons: use two-season volume or career-max level so a rehab season does not read as a washout (Miller).
+- P(MLB) drift: a recency term or era-aware calibration, judged on CV with 2018+ censored data.
+- C10 BB and AA->AAA residual harshness.
+
+### Spec deviations
+- C10 and C11 (prior) fail as reported above; C4 still fails. No deviation from the R0 decisions except: the spread model also uses the WAR prediction as an input (needed for C11; decided on CV before the R9 look).

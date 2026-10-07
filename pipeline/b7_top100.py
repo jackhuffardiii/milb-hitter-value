@@ -8,7 +8,7 @@ import json, re, sys, unicodedata
 import pandas as pd
 
 PITCH = {"P", "RHP", "LHP", "SP", "RP"}
-NICK = {"nick": "nicholas", "nicky": "nicholas", "mike": "michael", "matt": "matthew", "jake": "jacob", "joc": "joc",
+NICK = {"nick": "nicholas", "nicky": "nicholas", "mike": "michael", "pete": "peter", "matt": "matthew", "jake": "jacob", "joc": "joc",
         "jon": "jonathan", "alex": "alexander", "josh": "joshua", "zach": "zachary", "chris": "christopher",
         "dan": "daniel", "tom": "thomas", "ben": "benjamin", "sam": "samuel", "andy": "andrew", "rob": "robert",
         "jim": "james", "will": "william", "billy": "william", "bobby": "robert", "tony": "anthony", "joey": "joseph",
@@ -64,6 +64,8 @@ def main(raw):
         out.append(r)
     df = pd.DataFrame(out)[["list_year", "source", "source_url", "rank", "name", "pos", "org", "is_hitter", "player_id", "match_status"]]
     df["player_id"] = df.player_id.astype("Int64")
+    old = pd.read_csv("data/manual/top100.csv", dtype={"player_id": "Int64"})  # keep list years not in this scrape
+    df = pd.concat([old[~old.list_year.isin(df.list_year)], df]).sort_values(["list_year", "rank"])
     df.to_csv("data/manual/top100.csv", index=False)
     h = df[df.is_hitter]
     print(h.groupby(["list_year", "match_status"]).size().unstack(fill_value=0))

@@ -3,14 +3,14 @@
 A stats-based projection system that puts a surplus dollar value on every A through AAA hitter, with an audit trail from minor league stat line to dollars: MLB-equivalent rates, P(reach MLB), expected WAR over six control years, ETA, and surplus $ with a 10/50/90 range.
 
 - Spec: [milb-hitter-value-spec.md](milb-hitter-value-spec.md)
-- Build log, output schemas, and results: [docs/handoff.md](docs/handoff.md)
+- Build log, output schemas, and results: [docs/handoff.md](docs/handoff.md) (v1.1 audit fixes: [docs/fix-plan.md](docs/fix-plan.md))
 - Site: static HTML/JS in [site/](site/) (leaderboard, player cards, methodology)
 
 ## Run
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run.py          # every step; `run.py b9` runs one
+.venv/bin/python run.py          # every step; `run.py b9` runs one; `--refresh` re-pulls bios/debuts and 2026 API data
 .venv/bin/python -m pytest -q
 cd site && python3 -m http.server
 ```

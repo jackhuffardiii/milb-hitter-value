@@ -12,14 +12,16 @@ import numpy as np
 import pandas as pd
 import requests
 
-from pipeline.common import API, COUNTS, DATA, RAW, add_rates, api_get, download, pmap
+from pipeline.common import API, COUNTS, DATA, RAW, add_rates, api_get, cache_file, download, pmap
 
 REPO_URL = "https://github.com/armstjc/milb-data-repository/releases/download/season_player_batting/{y}_{lv}_season_batting_stats.csv"
 LEVELS = ["aaa", "aa", "a+", "a", "a-", "rk"]
 REPO_YEARS = range(2005, 2025)
 API_MILB_YEARS = [2025, 2026]
 MLB_YEARS = range(2005, 2027)
-DRAFT_YEARS = range(2005, 2027)
+DRAFT_YEARS = range(1990, 2027)  # Q17: pre-2005 draftees must not look undrafted
+HISTORY_YEARS = range(2000, 2005)  # Q17: career-history backfill only (not snapshots)
+HISTORY_SPORTS = {11: "aaa", 12: "aa", 13: "a+", 14: "a", 15: "a-", 16: "rk"}
 SPORT_LEVEL = {11: "aaa", 12: "aa", 13: "a+", 14: "a", 16: "rk"}  # a+ = High-A, a = Low-A (repo codes)
 
 REPO_COLS = {"team_id": "team_id", "team_abv": "team_abv", "team_league_id": "league_id",
@@ -164,6 +166,17 @@ def aggregate_stints(d):
     return out
 
 
+def history():
+    """Q17: MiLB 2000-2004 G and PA per player x season x level x league (Stats API, per team), used only for
+    career-history features (pro_years, career PA, pace). The repo has no files before 2005."""
+    jobs = [(sp, y, t, "hitting") for y in HISTORY_YEARS for sp in HISTORY_SPORTS for t in _teams(sp, y)]
+    rows = []
+    for (sp, *_), splits in zip(jobs, pmap(_team_stats, jobs)):
+        rows += _api_split_rows(splits, HISTORY_SPORTS[sp])
+    d = pd.DataFrame(rows)
+    return d.groupby(["player_id", "season", "level", "league_id"], as_index=False)[["G", "PA"]].sum()
+
+
 # ---------- MLB ----------
 def _league_totals(season):
     """League-wide season rows (one per player, stats summed across teams): the completeness reference."""
@@ -256,6 +269,13 @@ def _height_in(h):
     return int(m[1]) * 12 + int(m[2]) if m else None
 
 
+def pull_date(ids):
+    """Oldest cache date of the people responses (debut dates and bios are as of this day)."""
+    ids = sorted(ids)
+    fs = [cache_file("people", personIds=",".join(map(str, ids[i:i + 100]))) for i in range(0, len(ids), 100)]
+    return pd.Timestamp(min(f.stat().st_mtime for f in fs), unit="s").normalize()
+
+
 def players(ids):
     ids = sorted(ids)
     res = pmap(_people, [ids[i:i + 100] for i in range(0, len(ids), 100)])
@@ -284,11 +304,14 @@ def main():
     stints[["player_id", "season", "level", "league_id", "team_id", "source"] + COUNTS + EXTRA].to_parquet(
         DATA / "milb_stints.parquet", index=False)  # B1 addendum: pre-aggregation frame for B3
     milb = aggregate_stints(stints)
+    hist = history()
+    hist.to_parquet(DATA / "milb_history.parquet", index=False)
 
     mlb, fld = mlb_hitting_fielding()
     dr = draft()
     ids = set(milb.player_id) | set(mlb.player_id) | set(fld.player_id) | set(dr.player_id.dropna())
     pl = players(ids)
+    pl["pulled_on"] = pull_date(ids)
 
     milb = milb.merge(pl[["player_id", "birth_date", "bats"]], on="player_id", how="left")
     milb["age"] = (pd.to_datetime(milb.season.astype(str) + "-07-01") - milb.pop("birth_date")).dt.days / 365.25

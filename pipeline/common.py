@@ -14,6 +14,9 @@ STATSAPI_CACHE = RAW / "statsapi"
 MANUAL = DATA / "manual"
 API = "https://statsapi.mlb.com/api/v1"
 MAX_WORKERS = 8  # contract: at most 8 concurrent requests
+CURRENT_SEASON = 2026
+REFRESH = False  # run.py --refresh: re-fetch answers that change (people, current season) once per run
+RUN_START = time.time()
 
 _session = requests.Session()
 
@@ -32,11 +35,21 @@ def _get(url, params=None, retries=6):
     raise RuntimeError(f"giving up on {url} {params}")
 
 
-def api_get(path, **params):
-    """GET {API}/{path} as JSON, cached on disk by (path, params)."""
+def cache_file(path, **params):
     key = hashlib.sha1(json.dumps([path, sorted(params.items())], default=str).encode()).hexdigest()
-    f = STATSAPI_CACHE / f"{key}.json"
-    if f.exists():
+    return STATSAPI_CACHE / f"{key}.json"
+
+
+def _changes(path, params):
+    """Answers that can change after caching: bios/debut dates and anything for the current season."""
+    return path.startswith("people") or str(params.get("season")) == str(CURRENT_SEASON)
+
+
+def api_get(path, **params):
+    """GET {API}/{path} as JSON, cached on disk by (path, params). With REFRESH, changing answers cached before this
+    run are re-fetched once."""
+    f = cache_file(path, **params)
+    if f.exists() and not (REFRESH and _changes(path, params) and f.stat().st_mtime < RUN_START):
         return json.loads(f.read_text())
     out = _get(f"{API}/{path}", params).json()
     STATSAPI_CACHE.mkdir(parents=True, exist_ok=True)
