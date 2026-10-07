@@ -1,12 +1,12 @@
-"""B8 surplus value model and grouped drivers (S10, A6, A7, A1, D9, Q10, Q2).
+"""B8 surplus value model and grouped drivers (S10, S16, A15, A16, A6, A7, A1, D9, Q10, Q2). v1.1.
 
-Surplus (S10): for each prediction row, debut year = snapshot+1+J, J ~ Poisson(eta_mean) truncated at 8 and renormalised
-(eta 0 = debut in snapshot+1). WAR in control years 1..6 = war * share_y (share profile from historical reached hitters).
-value = war * $/WAR(year), pre-arb (y 1-3) salary = league minimum, arb (y 4-6) salary = share * max(value, minimum).
-Cash flows are discounted to the snapshot year at 8%/yr (cash flow in calendar year Y: 1.08^-(Y-snapshot)).
-Expected surplus = p_mlb * surplus_if_mlb; a player who never reaches costs nothing in this model. WAR is raw (no floor),
-so q10 surplus can be negative. Backtest rows use the same function with $/WAR and minimum salary deflated back from
-2026 at the inflation rate (APPROXIMATE era parameters).
+Surplus (S10, A15): debut year = snapshot + t with B6 hazard probabilities P(debut = s + t), t = 1..9 (A13). WAR draws =
+war_mean + war_scale x z over the 199 stored standardized-residual quantiles of the row's B6 model (A16), each draw spread
+over control years 1..6 by the historical share profile. Per control year: value = WAR x $/WAR(year); salary = league
+minimum (years 1-3) or arb share x max(value, minimum) (years 4-6); surplus = max(value - salary, 0) (demote/release or
+non-tender). Discounted to the snapshot at 8%/yr. ev_surplus = sum_t P(debut = s + t) x E_draws[surplus | debut s + t];
+surplus_if_mlb = ev_surplus / p_mlb. Players already in MLB (S16): p = 1, control year 1 = their debut season, years up to
+the snapshot are sunk. Backtest rows use $/WAR and minimum deflated from 2026 at the inflation rate (APPROXIMATE).
 
 Grouped drivers (A6): full per-feature contributions (B6 `drivers`, top=all) summed within feature families.
 Outputs: data/valuations.parquet, data/war_profile.parquet, data/drivers_grouped.parquet.
@@ -14,13 +14,12 @@ Outputs: data/valuations.parquet, data/war_profile.parquet, data/drivers_grouped
 import joblib
 import numpy as np
 import pandas as pd
-from scipy.stats import poisson
 
-from .b6_models import MODELS, _X, drivers, prior_X
+from .b6_models import MODELS, T_MAX, drivers
 from .common import DATA, MANUAL
 
-J_MAX, BASE_YEAR = 8, 2026
-DEBUT_YEARS = [BASE_YEAR + 1 + j for j in range(J_MAX + 1)]
+BASE_YEAR = 2026
+DEBUT_YEARS = [BASE_YEAR + t for t in range(1, T_MAX + 1)]
 
 
 def load_params():
@@ -28,12 +27,6 @@ def load_params():
     return {"dpw": p.dollars_per_war_2026, "infl": p.dollars_per_war_inflation, "min": p.mlb_min_salary_2026,
             "min_g": p.mlb_min_salary_growth_2027plus, "arb": [p.arb_share_year1, p.arb_share_year2, p.arb_share_year3],
             "disc": p.discount_rate}
-
-
-def arrival_probs(eta_mean):
-    """(n, J_MAX+1) P(debut = snapshot+1+j), Poisson(eta_mean) truncated at J_MAX and renormalised."""
-    pm = poisson.pmf(np.arange(J_MAX + 1)[None, :], np.asarray(eta_mean, float)[:, None])
-    return pm / pm.sum(axis=1, keepdims=True)
 
 
 def war_profile():
@@ -49,44 +42,61 @@ def war_profile():
                          "n_players": len(wt)})
 
 
-def surplus_if_mlb(war, eta_mean, snapshot, prof, prm):
-    """Expected discounted surplus ($) given the player reaches MLB, per row. Increasing in war; later eta lowers it."""
-    war, snap = np.asarray(war, float), np.asarray(snapshot, int)
-    pj, share = arrival_probs(eta_mean), np.asarray(prof.share)
-    out = np.zeros(len(war))
-    for j in range(J_MAX + 1):
-        tot = np.zeros(len(war))
-        for y in range(1, 7):
-            yr = snap + 1 + j + y - 1  # calendar year of control year y
-            dpw = prm["dpw"] * (1 + prm["infl"]) ** (yr - BASE_YEAR)
-            mn = prm["min"] * (1 + prm["min_g"]) ** (yr - BASE_YEAR)
-            value = war * share[y - 1] * dpw
-            sal = mn if y <= 3 else prm["arb"][y - 4] * np.maximum(value, mn)
-            tot += (value - sal) / (1 + prm["disc"]) ** (yr - snap)
-        out += pj[:, j] * tot
+def contract_surplus(war, debut_year, snapshot, share, prm):
+    """Floored, discounted surplus ($) of each WAR draw. war: (n, k) draws; debut_year, snapshot: (n,). Control years
+    with calendar year <= snapshot are sunk (already-debuted players)."""
+    out = np.zeros(war.shape)
+    for y in range(1, 7):
+        yr = debut_year + y - 1
+        live = (yr > snapshot)[:, None]
+        dpw = (prm["dpw"] * (1 + prm["infl"]) ** (yr - BASE_YEAR))[:, None]
+        mn = (prm["min"] * (1 + prm["min_g"]) ** (yr - BASE_YEAR))[:, None]
+        value = war * share[y - 1] * dpw
+        sal = mn if y <= 3 else prm["arb"][y - 4] * np.maximum(value, mn)
+        out += np.where(live, np.maximum(value - sal, 0) / ((1 + prm["disc"]) ** (yr - snapshot))[:, None], 0)
     return out
 
 
-def value(pred, prof, prm):
-    v = pred[["player_id", "season", "fit", "group", "low_confidence", "p_mlb", "war_mean", "war_q10", "war_q50", "war_q90", "eta_mean"]].copy()
-    pj = arrival_probs(v.eta_mean)
-    # debut-year columns are calendar years relative to the 2026 snapshot (2026 rows); backtest rows use snapshot+1+j
-    for j in range(J_MAX + 1):
-        v[f"p_debut_{BASE_YEAR + 1 + j}"] = pj[:, j]
-    for k, c in [("mean", "war_mean"), ("q10", "war_q10"), ("q50", "war_q50"), ("q90", "war_q90")]:
-        s = surplus_if_mlb(v[c], v.eta_mean, v.season, prof, prm)
-        v["surplus_if_mlb" if k == "mean" else f"surplus_{k}"] = s
-    v["ev_surplus"] = v.p_mlb * v.surplus_if_mlb
+def _z(pred):
+    """(n, 199) standardized residual quantiles of each row's B6 model (A16)."""
+    z = np.zeros((len(pred), 199))
+    for (fit, group), idx in pred.groupby(["fit", "group"]).groups.items():
+        z[pred.index.get_indexer(idx)] = joblib.load(MODELS / f"{group}_{fit}.joblib")["z"]
+    return z
+
+
+def value(pred, prof, prm, war_col="war_mean"):
+    pred = pred.reset_index(drop=True)
+    v = pred[["player_id", "season", "fit", "group", "low_confidence", "debuted", "p_mlb", "war_mean", "war_q10", "war_q50",
+              "war_q90", "eta_mean"]].copy()
+    share, snap = np.asarray(prof.share), v.season.to_numpy()
+    draws = pred[war_col].to_numpy()[:, None] + pred.war_scale.to_numpy()[:, None] * _z(pred)
+    pdeb = pred[[f"p_debut_t{t}" for t in range(1, T_MAX + 1)]].to_numpy()
+    deb = v.debuted.to_numpy(bool)
+    per_draw = np.zeros(draws.shape)  # E over arrival, per draw, unconditional (sums P(debut) x surplus)
+    for t in range(1, T_MAX + 1):
+        per_draw += pdeb[:, t - 1:t] * contract_surplus(draws, snap + t, snap, share, prm)
+    debut_year = pd.to_numeric(pred.get("debut_year"), errors="coerce").to_numpy() if "debut_year" in pred else np.full(len(v), np.nan)
+    if deb.any():
+        per_draw[deb] = contract_surplus(draws[deb], debut_year[deb].astype(int), snap[deb], share, prm)
+    p = v.p_mlb.to_numpy()
+    cond = per_draw / np.clip(p, 1e-9, None)[:, None]  # conditional on reaching
+    v["surplus_if_mlb"] = cond.mean(axis=1)
+    for a in (0.1, 0.5, 0.9):
+        v[f"surplus_q{int(a * 100)}"] = np.quantile(cond, a, axis=1)
+    v["ev_surplus"] = per_draw.mean(axis=1)
+    for t in range(1, T_MAX + 1):  # 2026 rows: calendar years; backtest rows: snapshot + t
+        v[f"p_debut_{BASE_YEAR + t}"] = pdeb[:, t - 1]
     return v
 
 
 # ---------- grouped drivers ----------
-FAMILIES = ["Age", "Strikeouts", "Walks", "Power", "Contact quality", "Position", "Speed", "Development pace", "Body", "Draft pedigree", "Other"]
+FAMILIES = ["Age", "Strikeouts", "Walks", "Power", "Swing and miss", "Position", "Speed", "Development pace", "Body", "Draft pedigree", "Other"]
 _DEV = {"games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level", "pro_years", "highest_level", "career_milb_pa",
         "PA_s", "PA_highest", "level_num", "log_PA", "years_since_draft"}
 
 
-EXPECT = {"Strikeouts": -1, "Walks": 1, "Power": 1, "Contact quality": 1, "Speed": 1}  # sign of contribution when the lead input is above the training mean
+EXPECT = {"Strikeouts": -1, "Walks": 1, "Power": 1, "Swing and miss": 1, "Speed": 1}  # sign of contribution when the lead input is above the training mean
 NOTE = "; net effect also reflects trend/regressed values"
 
 
@@ -102,8 +112,8 @@ def family(feat):
         return "Walks"
     if f.endswith("_ISO"):
         return "Power"
-    if f.endswith("_BABIP"):
-        return "Contact quality"
+    if f.endswith(("contact_rate", "swing_rate")):  # S15 contact group (BABIP left the model in v1.1)
+        return "Swing and miss"
     if f == "exp_pos_runs" or f.startswith(("p_", "pos_share_")):
         return "Position"
     if f in ("sb_att_rate", "sb_success", "triple_rate"):
@@ -117,27 +127,13 @@ def family(feat):
     return "Other"
 
 
-def _prior_contrib(mod, df):
-    X = prior_X(df)[mod["cols"]]
-    rows = []
-    for t in ("p_mlb", "war"):
-        imp, sc, lin = mod[t].steps[0][1], mod[t].steps[1][1], mod[t].steps[2][1]
-        c = sc.transform(imp.transform(X)) * np.ravel(lin.coef_)
-        names = list(imp.get_feature_names_out(mod["cols"]))
-        rows.append(pd.DataFrame({"player_id": np.repeat(df.player_id.to_numpy(), len(names)), "season": np.repeat(df.season.to_numpy(), len(names)),
-                                  "target": t, "feature": np.tile(names, len(df)), "contribution": c.ravel()}))
-    return pd.concat(rows, ignore_index=True)
-
-
 def full_contrib(fit, group, rows):
     mod = joblib.load(MODELS / f"{group}_{fit}.joblib")
-    if group == "prior":
-        return _prior_contrib(mod, rows)
     return pd.concat([drivers(mod, rows, t, top=999) for t in ("p_mlb", "war")], ignore_index=True)
 
 
 DIR_FEATS = {"Strikeouts": ("blend_K", "K%", True), "Walks": ("blend_BB", "BB%", True), "Power": ("blend_ISO", "ISO", False),
-             "Contact quality": ("blend_BABIP", "BABIP", False), "Speed": ("sb_att_rate", "SB attempts per time on base", True)}
+             "Swing and miss": ("blend_contact_rate", "Contact rate (1 - whiffs/swings)", True), "Speed": ("sb_att_rate", "SB attempts per time on base", True)}
 
 
 def _phrases(r, ref):
@@ -151,7 +147,7 @@ def _phrases(r, ref):
         v = r.get(col)
         if pd.notna(v):
             f = (lambda x: f"{x:.1%}") if pct else (lambda x: f"{x:.3f}")
-            pre = "" if fam in ("Strikeouts", "Walks", "Speed") else "MLB-equivalent "
+            pre = "" if fam in ("Strikeouts", "Walks", "Speed", "Swing and miss") else "MLB-equivalent "
             out[fam] = (f"{pre}{lab} {f(v)} vs {f(ref[col])} prospect avg", 1 if v > ref[col] else -1)
     out["Position"] = ((f"Catcher profile ({r.p_C:.0%} C, pos adj {r.exp_pos_runs:+.1f} runs)" if pd.notna(r.get("p_C")) and r.p_C >= .5
                         else f"Position adjustment {r.exp_pos_runs:+.1f} runs") if pd.notna(r.get("exp_pos_runs")) else "Position", 0)
@@ -203,11 +199,11 @@ def main():
     fin = fin[fin.season == 2026]
     bt = pd.read_parquet(DATA / "predictions.parquet")
     bt = bt[bt.fit == "backtest"]
-    pred = pd.concat([fin, bt], ignore_index=True)
+    f = pd.read_parquet(DATA / "features.parquet")
+    pred = pd.concat([fin, bt], ignore_index=True).merge(f[["player_id", "season", "debut_year"]], on=["player_id", "season"], how="left")
     v = value(pred, prof, prm)
     v["s14_applied"] = pred.s14_applied.fillna(False).astype(bool).to_numpy()
     v.to_parquet(DATA / "valuations.parquet", index=False)
-    f = pd.read_parquet(DATA / "features.parquet")
     gd = grouped_drivers(pred, f)
     gd.to_parquet(DATA / "drivers_grouped.parquet", index=False)
     print(v[v.fit == "final"].groupby("group").ev_surplus.describe().to_string())
