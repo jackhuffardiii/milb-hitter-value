@@ -223,8 +223,8 @@
   }
 
   /* ---------- player card ---------- */
-  function sec(id, title, explain) {
-    return h("section", { "aria-labelledby": id }, h("h2", { id: id, text: title }), h("p", { class: "explain", text: explain }));
+  function sec(id, title) {
+    return h("section", { "aria-labelledby": id }, h("h2", { id: id, text: title }));
   }
   var COMP = { K: "Strikeout rate", BB: "Walk rate", ISO: "Isolated power", BABIP: "BABIP" };
 
@@ -251,100 +251,101 @@
         "He debuted on " + p.in_mlb.debut + " and is still rookie-eligible, so P(MLB) is 1 and his six-year control clock started at his debut. " +
         p.in_mlb.control_years_left + " control year" + (p.in_mlb.control_years_left === 1 ? "" : "s") + " remain from 2027; seasons already played are not counted. His MLB sample is too small to use as an input, so the projection still comes from his minor league record."));
 
-      /* 1. answer */
+      /* 1. value: the number up front; how we got it sits behind "Show more" */
       var s_ = p.surplus;
-      var a = h("section", { class: "answer", "aria-labelledby": "h-answer" },
-        h("h2", { id: "h-answer", style: "margin:0 0 8px;font-size:15px;font-family:var(--sans);font-weight:600", text: "Expected surplus value" }),
-        h("div", { class: "big num" }, usd(s_.ev), h("small", { text: p.in_mlb ? "already in MLB; remaining control years only" : "P(MLB) " + pct(p.p_mlb, 0) + " times " + usd(s_.if_mlb) + " if he reaches MLB" })),
-        h("p", { class: "explain", style: "margin-top:8px" }, "Dollars of value above what the team pays, over six years of control, discounted to 2026. Each year's surplus floors at zero, since a team can option, release or non-tender a player who does not produce, so a wider range of outcomes adds value. " + (p.in_mlb ? "Over his remaining control years" : "If he reaches MLB") + " the 10th to 90th percentile range is " + usd(s_.q10) + " to " + usd(s_.q90) + "; the median is " + usd(s_.q50) + "."),
-        rangeStrip({ q10: s_.q10, q50: s_.q50, q90: s_.q90, mean: s_.if_mlb, label: "Surplus if he reaches MLB: 10th " + usd(s_.q10) + ", median " + usd(s_.q50) + ", 90th " + usd(s_.q90) + ", mean " + usd(s_.if_mlb), fmt: function (v) { return usd(v, 0); } }),
-        h("p", { class: "legend" }, "Range is conditional on reaching MLB. The triangle is the mean; the bar is the 10th to 90th range and the tick is the median. Outcomes are right-skewed, so the median sits below the mean."));
-      w.appendChild(a);
+      var why = h("details", { class: "why" }, h("summary", { text: "Show more: how we got this value" }),
+        h("p", { class: "explain" }, "Dollars of value above what the team pays, over six years of control, discounted to 2026. Each year's surplus floors at zero, since a team can option, release or non-tender a player who does not produce, so a wider range of outcomes adds value. " + (p.in_mlb ? "Over his remaining control years" : "If he reaches MLB") + " the 10th to 90th percentile range is " + usd(s_.q10) + " to " + usd(s_.q90) + "; the median is " + usd(s_.q50) + "."),
+        h("p", { class: "legend" }, "Range is conditional on reaching MLB. The triangle is the mean; the bar is the 10th to 90th range and the tick is the median. Outcomes are right-skewed, so the median sits below the mean. WAR is ours, with MLB fielding from Baseball-Reference; debut bars come from a hazard model and sum to P(MLB)."));
 
-      /* 2. P(MLB) and WAR */
-      var s2 = sec("h-war", "Reach probability and production", "The odds he plays in the majors, and how many wins above replacement (our WAR, with MLB fielding from Baseball-Reference) he adds over his first six MLB seasons if he does.");
-      s2.appendChild(h("dl", { class: "kv" },
-        h("div", null, h("dt", { text: "P(MLB)" }), h("dd", { class: "num", text: pct(p.p_mlb, 1) })),
-        h("div", null, h("dt", { text: "6-year WAR, mean" }), h("dd", { class: "num", text: num(p.war.mean, 1) })),
-        h("div", null, h("dt", { text: "6-year WAR, median" }), h("dd", { class: "num", text: num(p.war.q50, 1) })),
-        h("div", null, h("dt", { text: "ETA, mean" }), h("dd", { class: "num" }, p.eta ? [num(p.eta.mean, 1), h("small", { text: " yrs" })] : "in MLB"))));
-      s2.appendChild(rangeStrip({ q10: p.war.q10, q50: p.war.q50, q90: p.war.q90, mean: p.war.mean, label: "6-year WAR if he reaches MLB: 10th " + num(p.war.q10) + ", median " + num(p.war.q50) + ", 90th " + num(p.war.q90), fmt: function (v) { return num(v, 1); } }));
-      s2.appendChild(h("p", { class: "legend", text: "WAR range is conditional on reaching MLB. The mean is the central estimate; the median is lower because outcomes are right-skewed. Negative WAR means below replacement." }));
-      w.appendChild(s2);
-
-      /* 3. ETA */
-      var s3 = sec("h-eta", "Debut timing", "When he is expected to debut, if he does. Bars are the probability of a first MLB game in each calendar year.");
-      if (p.eta) {
-        var items = Object.keys(p.eta.debut).sort().map(function (y) { return { k: y, v: p.eta.debut[y] }; });
-        s3.appendChild(barChart(items, "Probability of debut by year: " + items.map(function (i) { return i.k + " " + Math.round(i.v * 100) + "%"; }).join(", ")));
-        s3.appendChild(h("p", { class: "legend", text: "Mean ETA " + num(p.eta.mean, 1) + " years from the 2026 snapshot, if he debuts; 10th to 90th percentile " + num(p.eta.q10, 0) + " to " + num(p.eta.q90, 0) + " years. Bars come from the debut hazard model (the chance of debuting each year given he has not yet), so they sum to his P(MLB)." }));
-      } else s3.appendChild(h("p", { class: "muted", text: "He has already debuted (" + p.in_mlb.debut + ")." }));
-      w.appendChild(s3);
-
-      /* 4. drivers */
-      var s4 = sec("h-drv", "What drives the projection", "The model's inputs grouped into families. Blue pushes the projection up, orange pushes it down, sorted by size. Linear terms overlap, so read the family total, not single features. Italic phrases carry no direction: the family total also reflects trend and regressed values.");
+      /* drivers */
+      why.appendChild(h("h3", { text: "What drives the projection" }));
+      why.appendChild(h("p", { class: "explain", text: "The model's inputs grouped into families. Blue pushes the projection up, orange pushes it down, sorted by size. Linear terms overlap, so read the family total, not single features. Italic phrases carry no direction: the family total also reflects trend and regressed values." }));
       var two = h("div", { class: "two" });
-      [["p_mlb", "Reach probability (log-odds)", "log-odds"], ["war", "Six-year WAR if he reaches (wins)", "wins"]].forEach(function (t) {
+      [["p_mlb", "Reach probability (log-odds)"], ["war", "Six-year WAR if he reaches (wins)"]].forEach(function (t) {
         var L = p.drivers[t[0]], mx = Math.max.apply(null, L.map(function (x) { return Math.abs(x.c); }).concat([0.001]));
         two.appendChild(h("div", null, h("h3", { text: t[1] }), L.length ? h("ol", { class: "drv", "aria-label": t[1] + " drivers" }, L.map(function (x) {
           return h("li", null, h("div", { class: "fam" }, h("span", { text: x.family }), h("span", { class: "num " + (x.c < 0 ? "neg" : ""), text: (x.c > 0 ? "+" : "") + num(x.c, 2) })),
             divBar(x.c, mx), h("div", { class: "ph", style: x.sup ? "font-style:italic" : null, text: x.phrase }));
         })) : h("p", { class: "muted", text: "No drivers available." })));
       });
-      s4.appendChild(two);
-      w.appendChild(s4);
+      why.appendChild(two);
 
-      /* 5. chain */
-      var s5 = sec("h-chain", "From the box score to the model input", "Each rate goes through four steps: the raw 2026 line, adjusted for the home park, translated to an MLB-equivalent (MLE), then regressed toward his league's average by sample size. Park factor 1.00 is neutral. BABIP is shown for context only; it is not a model input.");
+      /* rate chain */
+      why.appendChild(h("h3", { text: "From the box score to the model input" }));
+      why.appendChild(h("p", { class: "explain", text: "Each rate goes through four steps: the raw 2026 line, adjusted for the home park, translated to an MLB-equivalent (MLE), then regressed toward his league's average by sample size. Park factor 1.00 is neutral. BABIP is shown for context only; it is not a model input." }));
       if (p.chain.length) {
         var rows = [];
         p.chain.forEach(function (c) {
           ["K", "BB", "ISO", "BABIP"].forEach(function (k, i) {
             var pf = c.park ? (k === "K" ? c.park.SO : k === "BB" ? c.park.BB : k === "BABIP" ? c.park.BABIP : "2B/3B " + num(c.park.B2B3B, 2) + ", HR " + num(c.park.HR, 2)) : null;
             var f = k === "ISO" || k === "BABIP" ? rate : function (x) { return pct(x, 1); };
-            rows.push([{ v: i === 0 ? LV(c.level) : "", cls: "lvl" }, COMP[k], i === 0 ? c.PA : "", c[k].map(f)[0], f(c[k][1]), f(c[k][2]), f(c[k][3]), typeof pf === "number" ? num(pf, 2) : (pf || "n/a")]);
+            rows.push([{ v: i === 0 ? LV(c.level) : "", cls: "lvl" }, COMP[k], i === 0 ? c.PA : "", f(c[k][0]), f(c[k][1]), f(c[k][2]), f(c[k][3]), typeof pf === "number" ? num(pf, 2) : (pf || "n/a")]);
           });
         });
-        s5.appendChild(table(["Level", "Rate", { t: "PA", n: 1 }, { t: "Raw", n: 1 }, { t: "Park-neutral", n: 1 }, { t: "MLE", n: 1 }, { t: "Regressed", n: 1 }, "Park factor"].map(function (x, i) { return i >= 2 && i <= 6 ? x : x; }),
-          rows.map(function (r) { return r.map(function (c, i) { return i >= 3 && i <= 6 ? { v: c } : c; }); }), { label: "Rate chain by level", caption: "2026 rates by level. MLE and regressed are on the MLB scale." }));
+        why.appendChild(table(["Level", "Rate", { t: "PA", n: 1 }, { t: "Raw", n: 1 }, { t: "Park-neutral", n: 1 }, { t: "MLE", n: 1 }, { t: "Regressed", n: 1 }, "Park factor"],
+          rows, { label: "Rate chain by level", caption: "2026 rates by level. MLE and regressed are on the MLB scale." }));
         if (p.blend) {
-          s5.appendChild(h("p", { class: "explain" }, "Model input across levels (3:2 weighted blend of 2026 and 2025 regressed MLEs, 2026 alone when 2025 is missing): K " + pct(p.blend.K) + ", BB " + pct(p.blend.BB) + ", ISO " + rate(p.blend.ISO) + ". Single-season regressed (across levels): K " + pct(p.blend.reg_K) + ", BB " + pct(p.blend.reg_BB) + ", ISO " + rate(p.blend.reg_ISO) + "." + (p.blend.contact != null ? " Contact rate (1 minus whiffs per swing, A to AAA): " + pct(p.blend.contact) + "." : "")));
+          why.appendChild(h("p", { class: "explain" }, "Model input across levels (3:2 weighted blend of 2026 and 2025 regressed MLEs, 2026 alone when 2025 is missing): K " + pct(p.blend.K) + ", BB " + pct(p.blend.BB) + ", ISO " + rate(p.blend.ISO) + ". Single-season regressed (across levels): K " + pct(p.blend.reg_K) + ", BB " + pct(p.blend.reg_BB) + ", ISO " + rate(p.blend.reg_ISO) + "." + (p.blend.contact != null ? " Contact rate (1 minus whiffs per swing, A to AAA): " + pct(p.blend.contact) + "." : "")));
         }
-      } else s5.appendChild(h("p", { class: "muted", text: "No A through AAA rate chain for 2026 (Rookie-level or too few plate appearances). The projection comes from the prior." }));
+      } else why.appendChild(h("p", { class: "muted", text: "No A through AAA rate chain for 2026 (Rookie-level or too few plate appearances). The projection comes from the prior." }));
+      why.appendChild(h("p", { class: "legend", text: "Batted-ball data is display only. An adjustment that swaps observed ISO and BABIP for expected values from it (S14) was tested and not applied. Height enters the model; weight does not, because current listed weight leaks information from after the snapshot. Position probabilities come from the 2005 to 2017 transition matrix and feed the positional adjustment in WAR. S14 applied to this card: " + (p.s14_applied ? "yes" : "no") + "." }));
+
+      w.appendChild(h("section", { class: "answer", "aria-labelledby": "h-answer" },
+        h("h2", { id: "h-answer", style: "margin:0 0 8px;font-size:15px;font-family:var(--sans);font-weight:600", text: "Expected surplus value" }),
+        h("div", { class: "big num" }, usd(s_.ev), h("small", { text: p.in_mlb ? "already in MLB; remaining control years only" : "P(MLB) " + pct(p.p_mlb, 0) + " times " + usd(s_.if_mlb) + " if he reaches MLB" })),
+        rangeStrip({ q10: s_.q10, q50: s_.q50, q90: s_.q90, mean: s_.if_mlb, label: "Surplus if he reaches MLB: 10th " + usd(s_.q10) + ", median " + usd(s_.q50) + ", 90th " + usd(s_.q90) + ", mean " + usd(s_.if_mlb), fmt: function (v) { return usd(v, 0); } }),
+        why));
+
+      /* 2. outlook: P(MLB), WAR, debut */
+      var s2 = sec("h-war", "Outlook");
+      s2.appendChild(h("dl", { class: "kv" },
+        h("div", null, h("dt", { text: "P(MLB)" }), h("dd", { class: "num", text: pct(p.p_mlb, 1) })),
+        h("div", null, h("dt", { text: "6-year WAR, mean" }), h("dd", { class: "num", text: num(p.war.mean, 1) })),
+        h("div", null, h("dt", { text: "6-year WAR, median" }), h("dd", { class: "num", text: num(p.war.q50, 1) })),
+        h("div", null, h("dt", { text: "ETA, mean" }), h("dd", { class: "num" }, p.eta ? [num(p.eta.mean, 1), h("small", { text: " yrs" })] : "in MLB"))));
+      s2.appendChild(h("h3", { text: "Six-year WAR if he reaches MLB" }));
+      s2.appendChild(rangeStrip({ q10: p.war.q10, q50: p.war.q50, q90: p.war.q90, mean: p.war.mean, label: "6-year WAR if he reaches MLB: 10th " + num(p.war.q10) + ", median " + num(p.war.q50) + ", 90th " + num(p.war.q90), fmt: function (v) { return num(v, 1); } }));
+      s2.appendChild(h("h3", { text: "Debut year" }));
+      if (p.eta) {
+        var items = Object.keys(p.eta.debut).sort().map(function (y) { return { k: y, v: p.eta.debut[y] }; });
+        s2.appendChild(barChart(items, "Probability of debut by year: " + items.map(function (i) { return i.k + " " + Math.round(i.v * 100) + "%"; }).join(", ")));
+        s2.appendChild(h("p", { class: "legend", text: "ETA 10th to 90th percentile: " + num(p.eta.q10, 0) + " to " + num(p.eta.q90, 0) + " years." }));
+      } else s2.appendChild(h("p", { class: "muted", text: "Debuted " + p.in_mlb.debut + "." }));
+      w.appendChild(s2);
+
+      /* 3. stats */
+      var s3 = sec("h-stats", "Stats");
       var hist = p.hist.map(function (x) { return [String(x.season), LV(x.level), x.G, x.PA, rate(x.AVG), rate(x.OBP), rate(x.SLG), pct(x.K), pct(x.BB), rate(x.ISO), rate(x.BABIP)]; });
-      s5.appendChild(h("h3", { text: "Last three seasons, as played" }));
-      s5.appendChild(table(["Season", "Level", { t: "G", n: 1 }, { t: "PA", n: 1 }, { t: "AVG", n: 1 }, { t: "OBP", n: 1 }, { t: "SLG", n: 1 }, { t: "K%", n: 1 }, { t: "BB%", n: 1 }, { t: "ISO", n: 1 }, { t: "BABIP", n: 1 }],
-        hist, { label: "Level history", caption: "Unadjusted stat lines (recomputed from counting stats)." }));
-      w.appendChild(s5);
-
-      /* 6. batted ball */
-      var s6 = sec("h-bb", "Batted-ball context", "Exit velocity and launch angle from Baseball Savant, tracked at AAA and Low-A Florida State League parks only. Display only: it does not change the projection.");
+      s3.appendChild(table(["Season", "Level", { t: "G", n: 1 }, { t: "PA", n: 1 }, { t: "AVG", n: 1 }, { t: "OBP", n: 1 }, { t: "SLG", n: 1 }, { t: "K%", n: 1 }, { t: "BB%", n: 1 }, { t: "ISO", n: 1 }, { t: "BABIP", n: 1 }],
+        hist, { label: "Level history", caption: "Last three seasons, as played." }));
+      s3.appendChild(h("h3", { text: "By pitcher hand" }));
+      if (p.hand && p.hand.length) {
+        s3.appendChild(table(["Season", "Level", "Vs", { t: "PA", n: 1 }, { t: "AVG", n: 1 }, { t: "OBP", n: 1 }, { t: "SLG", n: 1 }, { t: "ISO", n: 1 }, { t: "K%", n: 1 }, { t: "BB%", n: 1 }],
+          p.hand.map(function (x) { return [String(x.season), LV(x.level), x.hand, x.PA, rate(x.AVG), rate(x.OBP), rate(x.SLG), rate(x.ISO), pct(x.K), pct(x.BB)]; }),
+          { label: "Splits by pitcher hand", caption: "Last three seasons, vs left- and right-handed pitchers." }));
+      } else s3.appendChild(h("p", { class: "muted", text: "No handedness splits available." }));
+      s3.appendChild(h("h3", { text: "By pitch type" }));
+      if (p.pitch && p.pitch.length) {
+        s3.appendChild(table(["Season", "Pitch", { t: "Pitches", n: 1 }, { t: "Seen%", n: 1 }, { t: "PA", n: 1 }, { t: "AVG", n: 1 }, { t: "SLG", n: 1 }, { t: "wOBA", n: 1 }, { t: "Whiff%", n: 1 }, { t: "Avg EV", n: 1 }, { t: "EV90", n: 1 }],
+          p.pitch.map(function (x) { return [String(x.season), x.family, x.n, pct(x.share, 0), x.PA, rate(x.AVG), rate(x.SLG), rate(x.wOBA), pct(x.whiff), x.ev == null ? "n/a" : num(x.ev, 1) + " mph", x.ev90 == null ? "n/a" : num(x.ev90, 1) + " mph"]; }),
+          { label: "Splits by pitch type", caption: "Statcast, tracked AAA and Low-A Florida State League parks only. Fastball: four-seam, sinker, cutter. Breaking: slider, sweeper, curveball. Offspeed: changeup, splitter." }));
+      } else s3.appendChild(h("p", { class: "muted", text: "Not tracked: no pitches seen at AAA or Low-A Florida State League parks in 2024 to 2026." }));
+      s3.appendChild(h("h3", { text: "Batted ball" }));
       if (p.batted.length) {
-        s6.appendChild(table(["Season", "Level", { t: "Tracked BIP", n: 1 }, { t: "Avg EV", n: 1 }, { t: "EV90", n: 1 }, { t: "Hard-hit%", n: 1 }, { t: "Avg LA", n: 1 }, { t: "Sweet-spot%", n: 1 }, { t: "Barrel%", n: 1 }],
-          p.batted.map(function (x) { return [String(x.season), LV(x.level), x.n, num(x.ev, 1) + " mph", num(x.ev90, 1) + " mph", pct(x.hh), num(x.la, 1) + "°", pct(x.sweet), pct(x.barrel)]; }), { label: "Batted-ball metrics" }));
-      } else s6.appendChild(h("p", { class: "muted", text: "Not tracked: this player has no batted balls at AAA or Low-A Florida State League parks in 2025 or 2026." }));
-      s6.appendChild(h("p", { class: "legend", text: "An adjustment that swaps observed ISO and BABIP for expected values from these metrics (S14) was tested and not applied; it failed its test (see methodology). S14 applied to this card: " + (p.s14_applied ? "yes" : "no") + "." }));
-      w.appendChild(s6);
+        s3.appendChild(table(["Season", "Level", { t: "Tracked BIP", n: 1 }, { t: "Avg EV", n: 1 }, { t: "EV90", n: 1 }, { t: "Hard-hit%", n: 1 }, { t: "Avg LA", n: 1 }, { t: "Sweet-spot%", n: 1 }, { t: "Barrel%", n: 1 }],
+          p.batted.map(function (x) { return [String(x.season), LV(x.level), x.n, num(x.ev, 1) + " mph", num(x.ev90, 1) + " mph", pct(x.hh), num(x.la, 1) + "°", pct(x.sweet), pct(x.barrel)]; }), { label: "Batted-ball metrics", caption: "Statcast, tracked at AAA and Low-A Florida State League parks only." }));
+      } else s3.appendChild(h("p", { class: "muted", text: "Not tracked: no batted balls at AAA or Low-A Florida State League parks in 2025 or 2026." }));
+      w.appendChild(s3);
 
-      /* 7. positions */
-      var s7 = sec("h-pos", "Projected MLB position", "Where players with his current position and level have ended up in the majors, from the 2005 to 2017 historical transition matrix. Position feeds the positional adjustment in WAR.");
-      s7.appendChild(h("ul", { class: "drv", "aria-label": "Position probabilities" }, p.pos_probs.map(function (x) {
+      /* 4. positions */
+      var s4 = sec("h-pos", "Projected MLB position");
+      s4.appendChild(h("ul", { class: "drv", "aria-label": "Position probabilities" }, p.pos_probs.map(function (x) {
         var svg = s("svg", { viewBox: "0 0 300 12", class: "chart", "aria-hidden": "true", style: "max-height:14px" });
         svg.appendChild(s("rect", { x: 0, y: 1, width: Math.max(1, x[1] * 300), height: 10, fill: cssv("--accent") }));
         return h("li", null, h("div", { class: "fam" }, h("span", { text: POSS[x[0]] || x[0] }), h("span", { class: "num", text: pct(x[1], 0) })), svg);
       })));
-      w.appendChild(s7);
+      w.appendChild(s4);
 
-      /* 8. bio */
-      var s8 = sec("h-bio", "Bio and acquisition", "Context only. Height enters the model; weight is shown for display and has no model role because current listed weight leaks information from after the snapshot (see methodology).");
-      s8.appendChild(h("dl", { class: "kv" },
-        h("div", null, h("dt", { text: "Bats" }), h("dd", { text: b.bats || "n/a" })),
-        h("div", null, h("dt", { text: "Height (model input)" }), h("dd", { class: "num", text: b.height_in ? b.height_in + " in" : "n/a" })),
-        h("div", null, h("dt", { text: "Weight (display only)" }), h("dd", { class: "num", text: b.weight_lb ? b.weight_lb + " lb" : "n/a" })),
-        h("div", null, h("dt", { text: "Age vs level average" }), h("dd", { class: "num", text: (b.age_vs_level > 0 ? "+" : "") + num(b.age_vs_level, 1) + " yrs" })),
-        h("div", null, h("dt", { text: "Draft" }), h("dd", { class: "num" }, b.draft ? b.draft.year + " rd " + b.draft.round + " pick " + b.draft.pick : (b.international ? "No draft record" : "n/a"),
-          b.draft && b.draft.bonus ? h("small", { text: " bonus " + usd(b.draft.bonus / 1e6, 2) }) : null))));
-      w.appendChild(s8);
       w.appendChild(h("p", { class: "explain", style: "margin-top:24px" }, h("a", { href: "index.html", text: "Back to leaderboard" }), " or read the ", h("a", { href: "method.html", text: "methodology" }), "."));
     }).catch(function (e) { chrome("player"); fail(e.message); });
   }
