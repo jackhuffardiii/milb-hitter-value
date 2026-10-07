@@ -26,7 +26,11 @@ def test_every_player_json_has_keys():
         c = json.loads((D / "players" / f"{r['id']}.json").read_text())
         assert KEYS <= set(c), r["id"]
         assert c["drivers"]["p_mlb"] and c["drivers"]["war"]
-        assert set(c["eta"]["debut"]) == {str(y) for y in range(2027, 2036)}
+        if r["in_mlb"]:  # S16: already debuted; no ETA, remaining control years shown instead
+            assert c["eta"] is None and c["in_mlb"]["control_years_left"] <= 5 and c["p_mlb"] == 1
+        else:
+            assert set(c["eta"]["debut"]) == {str(y) for y in range(2027, 2036)} and c["in_mlb"] is None
+        assert "BABIP" not in (c["blend"] or {})  # BABIP is display only (S7 v1.1)
 
 
 def test_cards_match_valuations():
@@ -42,7 +46,7 @@ def test_cards_match_valuations():
 
 def test_method_keys():
     m = json.loads((D / "method.json").read_text())
-    assert {"C1", "C2", "C3", "C4", "C8", "C9", "dollar_params", "sensitivity", "run_date"} <= set(m)
+    assert {"C1", "C2", "C3", "C4", "C8", "C9", "C10", "C12", "babip", "holdout_looks", "dollar_params", "sensitivity", "run_date"} <= set(m)
     assert m["C1"]["r_owar_bwar"] >= 0.85
 
 

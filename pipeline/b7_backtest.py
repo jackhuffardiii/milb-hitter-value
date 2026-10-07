@@ -95,6 +95,8 @@ def _c3_block(d, target):
 
 def c3(hold):
     h, out = baseline(hold[(hold.group == "stat") & ~hold.debuted], 2012, 2012)
+    v1 = hold[(hold.group == "stat") & ~hold.censored & ~hold.pre2005]  # v1 population (already-in-MLB rows included, p = 1)
+    out["v1_population_spearman_model"] = sp(v1.ev_war, v1.realized)
     for name, d in (("primary_excl_censored", h[~h.censored & ~h.pre2005]), ("sensitivity_incl_censored", h[~h.pre2005]),
                     ("player_disjoint", h[~h.censored & ~h.pre2005 & h.disjoint])):
         o = out[name] = _c3_block(d, "realized")

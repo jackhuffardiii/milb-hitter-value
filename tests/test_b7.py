@@ -44,3 +44,14 @@ def test_backtest_json():
     assert len(d["C4"]["deciles"]) == 10
     p = pd.read_parquet(DATA / "backtest_players.parquet")
     assert p.player_id.notna().all() and p.ev_war.notna().all()
+
+
+def test_c3_model_beats_naive_baseline():  # R9 single evaluation (v1.1): passes on both measures
+    c = json.load(open(DATA / "backtest.json"))["C3"]["primary_excl_censored"]
+    assert c["model_beats_baseline_logloss"] and c["model_beats_baseline_spearman"]
+
+
+@pytest.mark.xfail(reason="R9 (v1.1): 2013-17 deciles 7-9 under-predict by 5.4-10.3 pts; 2018-19 deciles 6, 8, 9 by 6-7 pts. "
+                          "Train-era CV is within 4 pts, so this reads as drift toward higher reach rates; not recalibrated.", strict=True)
+def test_c4_calibration_within_5_points():
+    assert json.load(open(DATA / "backtest.json"))["C4"]["all_pass"]

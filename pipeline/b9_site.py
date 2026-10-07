@@ -1,4 +1,4 @@
-"""B9: export site JSON (S11, S13, C5, C7, U1, U2). Reads parquet/json outputs, writes site/data/*.json.
+"""B9: export site JSON (S11, S13, S16, C5, C7, U1, U2; v1.1 adds C10-C12, Q17, Q18). Reads parquet/json outputs, writes site/data/*.json.
 
 Players: 2026 'final' rows of valuations.parquet. Rerunnable after any upstream rerun (python run.py b9).
 Dollar values are exported in millions of USD (rounded) so JSON stays small.
@@ -32,6 +32,9 @@ def m(x):
     return r(x / 1e6, 3) if pd.notna(x) else None
 
 
+# v1.1 audit (2026-10-06, v1 features, s<=2012 GroupKFold CV; holdout untouched): dropping reg_/blend_/delta_BABIP
+BABIP_ABLATION = dict(logloss_with=0.4142, logloss_without=0.4151, ev_spearman_with=0.1416, ev_spearman_without=0.1401,
+                      r_yoy_mle=0.435, r_next_mlb=0.108, n_next_mlb=1065, driver_share_p_mlb_v1=0.126)
 RUN_DATE = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
 
@@ -101,6 +104,8 @@ def sensitivity(names):
     prm, prof = load_params(), war_profile()
     pr = pd.read_parquet(DATA / "predictions_final.parquet")
     pr = pr[(pr.fit == "final") & (pr.season == SEASON)]
+    ft = pd.read_parquet(DATA / "features.parquet", columns=["player_id", "season", "debut_year"])
+    pr = pr.merge(ft, on=["player_id", "season"], how="left")
     out = []
     for g in (prm["infl"], 0.03, 0.07):
         v = value(pr, prof, {**prm, "infl": g, "min_g": g}).sort_values("ev_surplus", ascending=False).head(10)
@@ -125,9 +130,13 @@ def method(tm, n_players, grp_counts):
     return dict(
         run_date=RUN_DATE, data_through=data_through(), season=SEASON,
         C1=c1(), park_examples=park_examples(tm), translation_factors=translation_table(),
-        model_choice=dict(chosen=b6["chosen_stat"], cv=b6["cv_stat"], recal=b6["recal"], cv_prior=b6["cv_prior"]),
-        holdout=dict(stat=ho(b6["holdout_stat"]), stat_uncalibrated=ho(b6["holdout_stat_uncalibrated"]), prior=ho(b6["holdout_prior"])),
-        C2=bt["C2"], C3=bt["C3"], C4=bt["C4"], sources=bt["sources"], backtest_note=bt["note"],
+        model_choice=dict(chosen=b6["chosen_stat"], cv=b6["cv_stat"], spread=b6["spread"],
+                          calibration_check={k: {kk: v[kk] for kk in ("max_abs_gap", "platt_applied", "n_rows", "tail")}
+                                             for k, v in b6["calibration_check"].items()}),
+        holdout={k: {kk: ho(vv) for kk, vv in v.items()} for k, v in b6["holdout"].items()},
+        C2=bt["C2"], C3=bt["C3"], C4=bt["C4"], C12=bt["C12"], holdout_looks=bt["holdout_looks"], sources=bt["sources"],
+        backtest_note=bt["note"], C10=json.loads((DATA / "b4_k.json").read_text())["C10"],
+        babip=BABIP_ABLATION, people_pulled_on=str(pd.read_parquet(DATA / "players.parquet").pulled_on.iloc[0].date()),
         disagreements=dict(model_higher=dis(bt["disagreements"]["model_higher_than_list"]),
                            model_lower=dis(bt["disagreements"]["model_lower_than_list"])),
         realized_definition=bt["realized_definition"],
@@ -156,7 +165,7 @@ def main():
     bb = pd.read_parquet(DATA / "batted_ball.parquet")
     dg = pd.read_parquet(DATA / "drivers_grouped.parquet")
     dg = dg[(dg.fit == "final") & (dg.season == SEASON)]
-    pt = pd.read_parquet(DATA / "position_transition.parquet")
+    pt = pd.read_parquet(DATA / "position_transition.parquet").query("cutoff == 2017")
     tm = teams()
     THROUGH = data_through()
 
@@ -194,8 +203,10 @@ def main():
         lb.append(dict(id=int(pid), name=f["name"], org=org, team=tname, level=f.highest_level, age=r(f.age, 1),
                        pos=f.milb_pos if pd.notna(f.milb_pos) else None, mlb_pos=pp[0][0] if pp else None,
                        group=x.group, low_conf=bool(x.low_confidence), p_mlb=r(x.p_mlb, 4), war=r(x.war_mean, 2),
-                       eta=r(x.eta_mean, 2), ev=m(x.ev_surplus), q10=m(x.surplus_q10), q90=m(x.surplus_q90), rank=int(x.rank)))
-    dump(SITE / "leaderboard.json", dict(season=SEASON, run_date=RUN_DATE, data_through=data_through(), rows=lb))
+                       eta=None if x.debuted else r(x.eta_mean, 2), ev=m(x.ev_surplus), q10=m(x.surplus_q10), q90=m(x.surplus_q90),
+                       rank=int(x.rank), in_mlb=bool(x.debuted)))
+    pulled = str(ply.pulled_on.iloc[0].date())
+    dump(SITE / "leaderboard.json", dict(season=SEASON, run_date=RUN_DATE, data_through=data_through(), people_pulled_on=pulled, rows=lb))
 
     # player cards
     pdir = SITE / "players"
@@ -248,7 +259,7 @@ def main():
         dd = dg_by.get(pid)
         pl = ply.loc[pid] if pid in ply.index else None
         card = dict(
-            id=int(pid), name=f["name"], season=SEASON, run_date=RUN_DATE, data_through=THROUGH, rank=int(x.rank), n_ranked=len(v),
+            id=int(pid), name=f["name"], season=SEASON, run_date=RUN_DATE, people_pulled_on=pulled, data_through=THROUGH, rank=int(x.rank), n_ranked=len(v),
             org=org_of.get(pid, (None, None))[0], team=org_of.get(pid, (None, None))[1], level=f.highest_level, age=r(f.age, 1),
             group=x.group, low_conf=bool(x.low_confidence), s14_applied=bool(x.s14_applied),
             bio=dict(bats=f.bats if pd.notna(f.bats) else None, height_in=r(f.height_in, 0), weight_lb=r(f.weight_lb, 0),
@@ -257,10 +268,14 @@ def main():
                                                                                        bonus=r(f.signing_bonus, 0)),
                      international=bool(f.international)),
             hist=hist, chain=chain,
-            blend=None if x.group != "stat" else dict(K=r(f.blend_K), BB=r(f.blend_BB), ISO=r(f.blend_ISO), BABIP=r(f.blend_BABIP),
-                                                      reg_K=r(f.reg_K), reg_BB=r(f.reg_BB), reg_ISO=r(f.reg_ISO), reg_BABIP=r(f.reg_BABIP)),
+            blend=None if x.group != "stat" else dict(K=r(f.blend_K), BB=r(f.blend_BB), ISO=r(f.blend_ISO),
+                                                      reg_K=r(f.reg_K), reg_BB=r(f.reg_BB), reg_ISO=r(f.reg_ISO),
+                                                      contact=r(f.blend_contact_rate)),  # BABIP is display only (S7 v1.1)
+            in_mlb=None if not x.debuted else dict(debut=str(ply.loc[pid].mlb_debut_date.date()),
+                                                   control_years_left=int(max(0, 6 - (SEASON - int(f.debut_year) + 1)))),
             p_mlb=r(x.p_mlb, 4), war=dict(mean=r(x.war_mean, 2), q10=r(x.war_q10, 2), q50=r(x.war_q50, 2), q90=r(x.war_q90, 2)),
-            eta=dict(mean=r(x.eta_mean, 2), q10=r(p.eta_q10, 2), q90=r(p.eta_q90, 2), debut={c[-4:]: r(x._asdict()[c], 4) for c in pd_cols}),
+            eta=None if x.debuted else dict(mean=r(x.eta_mean, 2), q10=r(p.eta_q10, 2), q90=r(p.eta_q90, 2),
+                                            debut={c[-4:]: r(x._asdict()[c], 4) for c in pd_cols}),
             surplus=dict(if_mlb=m(x.surplus_if_mlb), q10=m(x.surplus_q10), q50=m(x.surplus_q50), q90=m(x.surplus_q90), ev=m(x.ev_surplus)),
             drivers=dict(p_mlb=[] if dd is None else drivers_target(dd, "p_mlb"), war=[] if dd is None else drivers_target(dd, "war")),
             batted=bbl, pos_probs=pos_cache[pid],

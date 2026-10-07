@@ -212,7 +212,11 @@ def hazard_cv_check(make, df, X):
     cal = _calibration(y, p)
     worst = max(abs(c["gap"]) for c in cal)
     rec = Platt().fit(p, y) if worst > 0.05 else None
-    return rec, {"cv_deciles": cal, "max_abs_gap": worst, "platt_applied": rec is not None, "n_rows": int(len(d))}
+    tail = [{"lo": lo, "hi": hi, "n": int(((p >= lo) & (p < hi)).sum()), "predicted": float(p[(p >= lo) & (p < hi)].mean()),
+             "observed": float(y[(p >= lo) & (p < hi)].mean())}
+            for lo, hi in ((0.9, 0.95), (0.95, 0.98), (0.98, 0.99), (0.99, 1.01)) if ((p >= lo) & (p < hi)).sum()]
+    return rec, {"cv_deciles": cal, "max_abs_gap": worst, "platt_applied": rec is not None, "n_rows": int(len(d)),
+                 "tail": tail}  # deciles hide the top tail; reported, not used for recalibration (C4 rule is decile-based)
 
 
 # ---------- WAR spread (A16) ----------
