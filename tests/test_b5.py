@@ -22,15 +22,17 @@ def test_unique_keys(f):
 
 
 def test_transition_rows_sum_to_one(tm):
-    s = tm.groupby(["level_group", "milb_pos"]).p.sum()
+    s = tm.groupby(["cutoff", "level_group", "milb_pos"]).p.sum()
     assert ((s - 1).abs() < 1e-9).all()
 
 
 def test_transition_sanity(tm):
-    p = tm.set_index(["level_group", "milb_pos", "mlb_pos"]).p
-    for lg in ("low", "high"):
-        assert p[(lg, "SS", "SS")] < 0.8
-        assert p[(lg, "C", "C")] > 0.5
+    p = tm.set_index(["cutoff", "level_group", "milb_pos", "mlb_pos"]).p
+    assert set(tm.cutoff) == {2012, 2017}  # per-fit matrices: backtest never sees holdout positions (v1.1)
+    for c in (2012, 2017):
+        for lg in ("low", "high"):
+            assert p[(c, lg, "SS", "SS")] < 0.8
+            assert p[(c, lg, "C", "C")] > 0.5
 
 
 def test_stat_rows_have_mle(f):
@@ -41,8 +43,10 @@ def test_stat_rows_have_mle(f):
 
 
 def test_labels_consistent(f):
-    r = f[f.reached_mlb]
-    assert (r.eta_years >= 0).all() and r.eta_years.notna().all()
+    assert (f.debuted == (f.debut_year <= f.season)).all()  # S16
+    r = f[f.reached_mlb & ~f.debuted]
+    assert (r.eta_years >= 1).all() and r.eta_years.notna().all()  # A13: ETA >= 1 for players not yet in MLB
+    assert f.loc[f.debuted, "eta_years"].isna().all()
     assert f.loc[~f.reached_mlb, ["eta_years", "war_6yr"]].isna().all().all()
 
 
@@ -77,3 +81,9 @@ def test_contact_availability(f):
     s = f[(f.group == "stat") & (f.highest_level.isin(["a", "a+", "aa", "aaa"]))]
     assert s[s.season == 2026].contact_rate.notna().mean() > 0.95
     assert s[s.season == 2025].contact_rate.isna().all()  # Q16: no 2025 swings
+
+
+def test_history_removes_left_censoring(f):  # Q17: 2000-04 backfill
+    t = f[(f.split == "train_era") & (f.group == "stat")]
+    med = t.groupby("season").pro_years.median()
+    assert med.loc[2005] >= med.loc[2012] - 1

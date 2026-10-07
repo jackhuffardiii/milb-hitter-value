@@ -33,7 +33,15 @@ MODELS = DATA / "models"
 QS = [0.1, 0.5, 0.9]
 LOG_COLS = ["PA_s", "PA_highest", "career_milb_pa"]
 STAT_NUM = (["level_num", "age", "age_vs_level", "pro_years", "p_C", "p_SS", "p_CF", "exp_pos_runs"] + LOG_COLS
-            + [f"{k}_{c}" for k in ("reg", "blend", "delta") for c in ("K", "BB", "ISO", "BABIP")])
+            + [f"{k}_{c}" for k in ("reg", "blend", "delta") for c in ("K", "BB", "ISO")])  # BABIP out of the model (S7 v1.1)
+POS_COLS = ["p_C", "p_SS", "p_CF", "exp_pos_runs"]
+
+
+def for_fit(df, fit):
+    """Backtest rows use the position transition fit on s<=2012 (columns *_bt), so the holdout never leaks in (v1.1)."""
+    if fit != "backtest":
+        return df
+    return df.assign(**{c: df[c + "_bt"] for c in POS_COLS})
 STAT_CATS = {"bats": ["L", "R", "S"], "highest_level": ["a", "a+", "aa", "aaa"]}  # raw MiLB position dummies removed (A6): position enters via exp_pos_runs, p_C, p_SS, p_CF
 PRIOR_NUM = ["round_num", "pick_overall", "log_bonus", "international", "age", "level_num", "log_PA", "years_since_draft"]
 LGB = dict(num_leaves=15, learning_rate=0.03, min_child_samples=50, random_state=0, verbose=-1)
@@ -149,10 +157,11 @@ def _targets(df):
     wt = pd.read_parquet(DATA / "war_target.parquet")[["player_id", "censored", "pre2005"]]
     d = df[["player_id"]].merge(wt, on="player_id", how="left")
     reached = df.reached_mlb.to_numpy(bool)
-    ok_war = reached & (d.censored == False).to_numpy() & (d.pre2005 == False).to_numpy()  # noqa: E712
-    return {"p_mlb": (np.ones(len(df), bool), df.reached_mlb.astype(int).to_numpy()),
+    fresh = ~df.debuted.to_numpy(bool)  # S16: players already in MLB at s are never training rows
+    ok_war = fresh & reached & (d.censored == False).to_numpy() & (d.pre2005 == False).to_numpy()  # noqa: E712
+    return {"p_mlb": (fresh, df.reached_mlb.astype(int).to_numpy()),
             "war": (ok_war, df.war_6yr.to_numpy()),
-            "eta": (reached & df.eta_years.notna().to_numpy(), df.eta_years.to_numpy())}
+            "eta": (fresh & reached & df.eta_years.notna().to_numpy(), df.eta_years.to_numpy())}
 
 
 def select_stat(train):

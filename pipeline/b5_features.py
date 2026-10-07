@@ -26,9 +26,9 @@ S15_GROUPS = {
     "pace": ["games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level"],
     "body": ["height_in"],  # weight_lb/bmi stay in features.parquet for display only (Q15 look-ahead: listed weights are updated post-snapshot)
 }
-S15_KEPT = ["sb_att_rate", "sb_success", "triple_rate", "pos_share_SS", "pos_share_CF", "pos_share_C",
-            "games_at_current_level", "ascent_pace", "levels_climbed_s", "repeated_level",
-            "height_in"]  # groups speed, posmix, pace, body kept by C9 (data/b12_c9.json); B6r imports this
+S15_KEPT = ["contact_rate", "swing_rate", "blend_contact_rate", "blend_swing_rate", "sb_att_rate", "sb_success",
+            "triple_rate", "pos_share_SS", "pos_share_CF", "pos_share_C",
+            "height_in"]  # v1.1 C9 rerun (data/b12_c9.json): contact, speed, posmix, body kept; pace dropped
 
 
 def _blend(A, cols, w):
@@ -41,7 +41,7 @@ def _blend(A, cols, w):
     return M[["player_id", "season"] + ["blend_" + c for c in cols]]
 
 
-def s15_features(S, snap, pl):
+def s15_features(S, snap, pl, hist):
     """S15 features for every snapshot row (caller blanks non-stat rows). S: filtered milb seasons with `lv`.
     Contact/batted/speed use A..AAA rows of season s only (blend adds s-1); detail rows with no data are skipped.
     Batted-ball mix is not park-adjusted. Contact is NaN for 2025 (no swings data, Q16): 2026 uses 2026 alone."""
@@ -80,7 +80,8 @@ def s15_features(S, snap, pl):
         pm[f"pos_share_{t}"] = (pm[f"pos_g_{t}"] / pm.G.where(pm.G > 0)).clip(upper=1)
     out = out.merge(pm.reset_index()[k + [f"pos_share_{t}" for t in ("SS", "CF", "C")]], on=k, how="left")
     # progression pace in games, through s (all levels incl. rookie ball)
-    L = S.assign(o=S.level.map(ORD), G=S.G.fillna(0))
+    L = pd.concat([S[["player_id", "season", "level", "G", "PA"]], hist], ignore_index=True)  # Q17: 2000-04 history
+    L = L.assign(o=L.level.map(ORD), G=L.G.fillna(0))
     cum = snap[k].merge(L[["player_id", "season", "o", "G", "PA"]], on="player_id", suffixes=("", "_l"))
     cum = cum[cum.season_l <= cum.season]
     top = cum.groupby(k).o.max().rename("top")
@@ -108,14 +109,15 @@ def s15_features(S, snap, pl):
     return out
 
 
-def build_transition(snap, fld, players):
-    """P(MLB primary pos | MiLB primary pos, level_group) from s<=2017 snapshots of players who reached MLB."""
+def build_transition(snap, fld, players, cutoff=2017):
+    """P(MLB primary pos | MiLB primary pos, level_group) from stat-group s<=cutoff snapshots of players who reached MLB.
+    Fit per model cutoff (backtest 2012, final 2017) so the backtest never sees holdout players' positions (v1.1)."""
     deb = players.set_index("player_id").mlb_debut_date.dt.year
     f = fld[fld.position != "P"].merge(deb.rename("dy"), left_on="player_id", right_index=True)
     f = f[(f.season >= f.dy) & (f.season <= f.dy + 2)]
     mlb_pos = f.groupby(["player_id", "position"]).games.sum().reset_index().sort_values(["player_id", "games"])
     mlb_pos = mlb_pos.groupby("player_id").position.last().rename("mlb_pos")  # no fielding rows -> absent -> DH
-    t = snap[(snap.season <= 2017) & snap.level_group.notna() & snap.reached_mlb & (snap.debut_year >= 2005)].copy()
+    t = snap[(snap.season <= cutoff) & snap.level_group.notna() & snap.reached_mlb & (snap.debut_year >= 2005)].copy()
     t = t.merge(mlb_pos, left_on="player_id", right_index=True, how="left")
     t["mlb_pos"] = t.mlb_pos.where(t.mlb_pos.isin(POS9), "DH")
     cnt = t.groupby(["level_group", "milb_pos", "mlb_pos"]).size().rename("n").reset_index()
@@ -151,7 +153,10 @@ def main():
     hl = hl[hl.level == hl.highest_level].groupby(["player_id", "season"]).PA.sum().rename("PA_highest")
     snap = snap.merge(hl.reset_index(), on=["player_id", "season"])
     # career MiLB PA through s, first MiLB season
-    ps = S.groupby(["player_id", "season"]).PA.sum().reset_index().sort_values(["player_id", "season"])
+    hist = pd.read_parquet(DATA / "milb_history.parquet")  # Q17: 2000-04 career history (not snapshots)
+    hist = hist[hist.league_id != MEXICAN_LEAGUE][["player_id", "season", "level", "G", "PA"]]
+    ps = pd.concat([S[["player_id", "season", "PA"]], hist[["player_id", "season", "PA"]]])
+    ps = ps.groupby(["player_id", "season"]).PA.sum().reset_index().sort_values(["player_id", "season"])
     ps["career_milb_pa"] = ps.groupby("player_id").PA.cumsum()
     ps["pro_years"] = ps.season - ps.groupby("player_id").season.transform("min") + 1
     snap = snap.merge(ps[["player_id", "season", "career_milb_pa", "pro_years"]], on=["player_id", "season"])
@@ -194,7 +199,7 @@ def main():
         snap[f"delta_{r}"] = x0 - x1
     snap = snap.drop(columns=["pa_cur", "pa_prev", "pa_two", "mle_PA", "p_mle_PA"] + ["p_" + c for c in regc])
     snap["level_group"] = np.where(stat, np.where(snap.level_num <= 2, "low", "high"), None)
-    f15 = s15_features(S, snap, pl).drop(columns=["player_id", "season"])
+    f15 = s15_features(S, snap, pl, hist).drop(columns=["player_id", "season"])
     f15[~stat.to_numpy()] = np.nan  # S15 features exist for the stat group only
     snap = pd.concat([snap, f15], axis=1)
 
@@ -204,21 +209,29 @@ def main():
                       on="player_id", how="left")
     snap["debut_year"] = snap.mlb_debut_date.dt.year
     snap["reached_mlb"] = snap.debut_year.notna()
-    snap["eta_years"] = (snap.debut_year - snap.season).clip(lower=0).where(snap.reached_mlb)
+    # S16: already in MLB by the end of s (still rookie-eligible). Never a training row; scored with P(MLB) = 1.
+    snap["debuted"] = snap.debut_year <= snap.season
+    snap["eta_years"] = (snap.debut_year - snap.season).where(snap.reached_mlb & ~snap.debuted)  # >= 1 (A13)
     snap = snap.merge(pd.read_parquet(DATA / "war_target.parquet")[["player_id", "war_6yr"]], on="player_id", how="left")
     snap.loc[~snap.reached_mlb, "war_6yr"] = np.nan
 
     # transition matrix (A10) and positional features
-    tm = build_transition(snap, pd.read_parquet(DATA / "mlb_fielding_games.parquet"), pl)
+    fld = pd.read_parquet(DATA / "mlb_fielding_games.parquet")
+    tms = []
+    for cutoff, suffix in ((2017, ""), (2012, "_bt")):  # final columns p_C...; backtest columns p_C_bt... (B6 swaps them)
+        tm = build_transition(snap, fld, pl, cutoff).assign(cutoff=cutoff)
+        tms.append(tm)
+        wide = tm.pivot(index=["level_group", "milb_pos"], columns="mlb_pos", values="p")[POS9]
+        fall = wide.xs("_ALL", level="milb_pos")  # milb positions never seen in train snapshots
+        pm = snap[["level_group", "milb_pos"]].drop_duplicates().dropna()
+        rows = [wide.loc[(lg, mp)] if (lg, mp) in wide.index else fall.loc[lg] for lg, mp in zip(pm.level_group, pm.milb_pos)]
+        P = pd.DataFrame(rows, index=pd.MultiIndex.from_frame(pm))
+        P["exp_pos_runs"] = P[POS9] @ pd.Series({k: POS_RUNS[k] for k in POS9})
+        P = P.rename(columns={"C": "p_C", "SS": "p_SS", "CF": "p_CF"})[["p_C", "p_SS", "p_CF", "exp_pos_runs"]]
+        P = P.add_suffix(suffix).reset_index()
+        snap = snap.merge(P, on=["level_group", "milb_pos"], how="left")
+    tm = pd.concat(tms, ignore_index=True)
     tm.to_parquet(DATA / "position_transition.parquet", index=False)
-    wide = tm.pivot(index=["level_group", "milb_pos"], columns="mlb_pos", values="p")[POS9]
-    fall = wide.xs("_ALL", level="milb_pos")  # milb positions never seen in train snapshots
-    pm = snap[["level_group", "milb_pos"]].drop_duplicates().dropna()
-    rows = [wide.loc[(lg, mp)] if (lg, mp) in wide.index else fall.loc[lg] for lg, mp in zip(pm.level_group, pm.milb_pos)]
-    P = pd.DataFrame(rows, index=pd.MultiIndex.from_frame(pm))
-    P["exp_pos_runs"] = P[POS9] @ pd.Series({k: POS_RUNS[k] for k in POS9})
-    P = P.rename(columns={"C": "p_C", "SS": "p_SS", "CF": "p_CF"})[["p_C", "p_SS", "p_CF", "exp_pos_runs"]].reset_index()
-    snap = snap.merge(P, on=["level_group", "milb_pos"], how="left")
 
     # draft features (latest record on or before s; international = none)
     d = pd.read_parquet(DATA / "draft.parquet").dropna(subset=["player_id"])
@@ -243,7 +256,7 @@ def main():
     print(snap.groupby(["split", "group"]).size().unstack())
     te = snap[(snap.split == "train_era") & (snap.group == "stat")]
     print(te.groupby("highest_level").reached_mlb.agg(["mean", "size"]))
-    print(tm[(tm.level_group == "high") & tm.milb_pos.isin(["SS", "C", "CF"])]
+    print(tm[(tm.cutoff == 2017) & (tm.level_group == "high") & tm.milb_pos.isin(["SS", "C", "CF"])]
           .pivot(index="milb_pos", columns="mlb_pos", values="p")[POS9].round(3))
     r = snap[snap.reached_mlb & (snap.split == "train_era")]
     print("train_era reached rows lacking war_6yr:", r.war_6yr.isna().sum(), "of", len(r),
