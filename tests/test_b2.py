@@ -50,9 +50,10 @@ def test_c1_bwar_correlation():
     r = j.owar.corr(j.WAR)
     print(f"C1 r={r:.4f} n={len(j)}")
     assert r >= 0.85
-    # elite glove / light bat: Andrelton Simmons 2017 (player_id 592743) oWAR well below bWAR
+    assert j.off.corr(j.b_off) >= 0.95  # our own components, without the borrowed fielding
+    # elite glove / light bat: Andrelton Simmons 2017 (player_id 592743); fielding (X2 reversed) closes most of the old ~5 win gap (rest is batting runs)
     s = j[(j.player_id == 592743) & (j.season == 2017)]
-    assert len(s) == 1 and s.owar.iloc[0] < s.WAR.iloc[0] - 2
+    assert len(s) == 1 and s.fld_runs.iloc[0] > 20 and abs(s.owar.iloc[0] - s.WAR.iloc[0]) < 2
 
 
 def test_bsr_present_and_league_wsb_zero():

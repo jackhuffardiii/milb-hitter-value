@@ -1,8 +1,10 @@
-"""B2 simplified WAR (S4, A2, A3, A4, C1, D7, Q2). MLB hitter-seasons 2005-2026, oWAR = batting (park-adjusted)
-+ baserunning (wSB + GIDP) + positional + replacement runs, over runs-per-win. No fielding. Also the 6-year WAR target per player.
+"""B2 simplified WAR (S4, A2, A3, A4, C1, D7, Q2, X2). MLB hitter-seasons 2005-2026, WAR = batting (park-adjusted)
++ baserunning (wSB + GIDP) + fielding (bWAR runs_field) + positional + replacement runs, over runs-per-win.
+Column `owar` holds this full WAR (name kept from the offense-only version; `fld_runs` is the fielding part).
+Also the 6-year WAR target per player.
 
 Outputs (data/): linear_weights.parquet (season), mlb_war.parquet (player x season), war_target.parquet (player).
-bWAR (D7, data/raw/bwar.csv) is validation only; see tests/test_b2.py and docs/handoff.md.
+bWAR (D7, data/raw/bwar.csv) supplies fielding runs only; its total WAR is validation (tests/test_b2.py, docs/handoff.md).
 """
 import numpy as np
 import pandas as pd
@@ -72,6 +74,16 @@ def _gidp():
     return m.groupby(["player_id", "season"], as_index=False).GiDP.sum().rename(columns={"GiDP": "GIDP"})
 
 
+def _fielding():
+    """player-season fielding runs (X2 reversed 2026-10-06): Baseball-Reference runs_field (DRS-based), summed over stints."""
+    b = pd.read_csv(fetch_bwar(), usecols=["mlb_ID", "year_ID", "runs_field"], low_memory=False)
+    b["runs_field"] = pd.to_numeric(b.runs_field, errors="coerce")
+    b = b[b.year_ID.between(2005, 2026) & b.mlb_ID.notna()]
+    return (b.groupby(["mlb_ID", "year_ID"], as_index=False).runs_field.sum()
+            .rename(columns={"mlb_ID": "player_id", "year_ID": "season", "runs_field": "fld_runs"})
+            .astype({"player_id": "int64", "season": "int64"}))
+
+
 def war():
     lw = linear_weights()
     lw.to_parquet(DATA / "linear_weights.parquet")
@@ -101,6 +113,8 @@ def war():
     # (runner on 1st, <2 outs) need MLB play-by-play, which we do not pull.
     p["gidp_runs"] = -0.37 * (p.GIDP - p.lg_GIDP_per_PA * p.PA)
     p["bsr_runs"] = p.wSB + p.gidp_runs
+    p = p.merge(_fielding(), on=["player_id", "season"], how="left")
+    p["fld_runs"] = p.fld_runs.fillna(0)  # not in bWAR (rare cup-of-coffee rows) -> average fielder
 
     fg = pd.read_parquet(DATA / "mlb_fielding_games.parquet")
     tot = fg.groupby(["player_id", "season"]).games.sum().rename("f_all")
@@ -116,9 +130,9 @@ def war():
     dh = (p.G - p.f_np).clip(lower=0)
     p["pos_runs"] = p.pos_f + POS_RUNS["DH"] * dh / 162
     p["primary_pos"] = p.primary_pos.fillna("DH")
-    p["owar"] = (p.bat_runs + p.park_runs + p.bsr_runs + p.pos_runs + p.repl_runs) / p.RPW
+    p["owar"] = (p.bat_runs + p.park_runs + p.bsr_runs + p.fld_runs + p.pos_runs + p.repl_runs) / p.RPW
     out = p[["player_id", "season", "PA", "wOBA", "lg_wOBA", "wOBA_scale", "bat_runs", "park_runs", "wSB", "gidp_runs", "bsr_runs",
-             "pos_runs", "repl_runs", "RPW", "owar", "primary_pos"]]
+             "fld_runs", "pos_runs", "repl_runs", "RPW", "owar", "primary_pos"]]
     out.to_parquet(DATA / "mlb_war.parquet")
     return out
 
@@ -161,6 +175,7 @@ def validate(w):
     j = w.merge(b, left_on=["player_id", "season"], right_on=["mlb_ID", "year_ID"])
     j = j[j.PA >= 300]
     j["b_off"] = (j.rb + j.rbr + j.rdp + j.rp + j.rr) / j.RPW  # bWAR offense incl. baserunning + DP
+    j["off"] = j.owar - j.fld_runs / j.RPW  # our WAR without the borrowed fielding: tests our own components
     j["b_bsr"] = j.rbr + j.rdp
     return j
 
@@ -175,7 +190,7 @@ def main():
         print("bWAR validation skipped:", e)
         return
     print(f"C1 (n={len(j)}): r vs bWAR WAR = {j.owar.corr(j.WAR):.4f}; "
-          f"r vs bWAR (bat+br+dp+pos+repl)/RPW = {j.owar.corr(j.b_off):.4f}; "
+          f"r offense-only vs bWAR (bat+br+dp+pos+repl)/RPW = {j.off.corr(j.b_off):.4f}; "
           f"r bsr_runs vs bWAR (runs_br+runs_dp) = {j.bsr_runs.corr(j.b_bsr):.4f}")
 
 

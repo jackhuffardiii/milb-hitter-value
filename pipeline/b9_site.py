@@ -71,7 +71,7 @@ def c1():
     j["resid"] = j.owar - j.WAR
     j["name"] = j.player_id.map(names)
     row = lambda x: dict(name=x["name"], season=int(x.season), owar=r(x.owar, 1), bwar=r(x.WAR, 1))  # noqa: E731
-    return dict(n=len(j), r_owar_bwar=r(j.owar.corr(j.WAR), 4), r_owar_vs_bwar_offense=r(j.owar.corr(j.b_off), 4),
+    return dict(n=len(j), r_owar_bwar=r(j.owar.corr(j.WAR), 4), r_owar_vs_bwar_offense=r(j.off.corr(j.b_off), 4),
                 r_bsr_vs_bwar_br_dp=r(j.bsr_runs.corr(j.b_bsr), 4), threshold=0.85, min_pa=300,
                 glove_first=[row(x) for _, x in j.nsmallest(5, "resid").iterrows()],
                 bat_first=[row(x) for _, x in j.nlargest(5, "resid").iterrows()])

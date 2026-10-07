@@ -19,7 +19,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **S1** Data layer: repo season batting files 2005 to 2024 (all levels), MiLB 2025 to 2026 pulled from the MLB Stats API, mid-season stints aggregated, all rate stats recomputed from counting stats.
 - **S2** Player bio and acquisition: birthdate, bats, MLB debut date from the Stats API people endpoint; draft round, pick, and signing bonus from the draft endpoint.
 - **S3** MLB outcomes: MLB season batting and games by position, 2005 to 2026, from the Stats API.
-- **S4** Simplified in-house WAR: wOBA-based batting runs, park adjusted, plus baserunning runs (wSB from SB/CS, and GIDP runs vs league rate), positional adjustment and replacement level. No fielding. Validated against bWAR. Baserunning added 2026-10-06 (user decision); extra-bases-taken baserunning not included (needs MLB play-by-play).
+- **S4** Simplified in-house WAR: wOBA-based batting runs, park adjusted, plus baserunning runs (wSB from SB/CS, and GIDP runs vs league rate), fielding runs (Baseball-Reference runs_field, DRS-based, 2005 to 2026), positional adjustment and replacement level. Validated against bWAR. Baserunning added 2026-10-06 (user decision); extra-bases-taken baserunning not included (needs MLB play-by-play). Fielding added 2026-10-06 (user decision; reverses X2).
 - **S5** Environment adjustments: park factors from MLB Stats API team home/road splits (MiLB and MLB, 2005 to 2026; 3-year window, regressed by reliability-derived k), and league-season translation factors from matched pairs, chained level to level up to MLB. Changed from PBP during B3: PBP ends May 2025 and could not cover the 2026 snapshot.
 - **S6** MLEs: MLB-equivalent K%, BB%, ISO, BABIP for every player-season, regressed by sample size.
 - **S7** Three models trained on 2005 to 2017 snapshots: P(reach MLB), E[WAR in first 6 MLB seasons | reached], and ETA (years to debut | reached). Features: MLEs, age relative to level, highest level, projected MLB position, year-over-year trajectory.
@@ -35,7 +35,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 ## Explicitly out of scope
 
 - **X1** Pitchers. v2.
-- **X2** Fielding in WAR. No free fielding source before 2016. (Baserunning moved into S4 on 2026-10-06.)
+- **X2** Minor league fielding as a model input (only crude PO/A/E exists before Statcast). MLB fielding runs moved into S4 on 2026-10-06: Baseball-Reference publishes them for every season, so the original "no free source before 2016" premise was wrong.
 - **X3** In-season or weekly refresh, and any live backend.
 - **X4** International signing bonus data. No free source.
 - **X5** Similarity comps on player cards. Candidate for v2.
@@ -47,7 +47,7 @@ Status: approved 2026-10-06. Decided via grill-me interview, 2026-10-06. S13, S1
 - **A1** Value means surplus $ over team control. It is the front office framing and maps directly to questionnaire prompts.
 - **A2** Target is P(MLB) x E[WAR in first 6 MLB seasons]. Seasons stand in for control years; simple and stated openly.
 - **A3** Train on 2005 to 2017 snapshots only. Later classes have censored MLB outcomes and would look like failures.
-- **A4** Own simplified WAR instead of bWAR/fWAR. Shows the skill without the fielding rabbit hole; bWAR used only as a validation check.
+- **A4** Own simplified WAR instead of bWAR/fWAR. bWAR supplies the fielding component only (from 2026-10-06); its total WAR is a validation check.
 - **A5** MLEs via matched pairs (same player, adjacent levels, same or consecutive season), chained to MLB, at league-season grain plus park. Handles PCL parks and era shifts (2021 restructure, ABS, pitch clock, ball changes) without separate era logic.
 - **A6** Models: logistic/linear baselines and LightGBM, pick per model by backtest. SHAP values give per-player drivers for the card.
 - **A7** Uncertainty: P(MLB) shown directly; WAR range from quantile models or empirical residuals, carried through to a 10/50/90 surplus $ range.

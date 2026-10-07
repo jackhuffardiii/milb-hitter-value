@@ -349,3 +349,12 @@ Run: `python run.py` (all steps, from cached raw data). `run.py` now prints per-
 Code on GitHub; `site/` deployed to Netlify as a static folder (no build command).
 
 Spec deviations: none.
+
+
+## B14 - Fielding runs in WAR (S4, X2, A4, C1; user decision 2026-10-06)
+
+Run: `python run.py` (209 s). `pipeline/b2_war.py::_fielding()` reads Baseball-Reference `runs_field` (DRS-based) from the cached `data/raw/bwar.csv`, summed over stints per mlb_ID x year; joined on player_id x season (100% of mlb_war rows match; missing would be 0). `mlb_war.parquet` gains `fld_runs` (float, runs). Column `owar` keeps its name but is now full WAR: (bat + park + bsr + fld + pos + repl) / RPW. bwar.csv is now a required input to b2 (was validation only); its 2026 PA total matches mlb_seasons exactly, so the cached file is complete. `validate()` adds `off` = owar - fld_runs/RPW.
+- C1 (300+ PA, n=5,775): r vs bWAR 0.8631 -> 0.9508 (partly shared by construction); offense-only vs bWAR offensive components 0.9689 (the independent check, unchanged). Simmons 2017: fld_runs 36, gap to bWAR 1.7 (batting runs), was ~5.
+- Model effect (target now includes defense, so old and new metrics measure different targets): train CV WAR Spearman ridge 0.3354 -> 0.2946 (ridge still chosen over LightGBM 0.2552). Holdout stat: ev Spearman 0.2162 -> 0.1652, WAR reached-only Spearman 0.3712 -> 0.3082, q10-q90 coverage 0.8006 -> 0.7719. P(MLB) unchanged. C3 still passes (Spearman 0.1652 vs naive 0.1456). C2 pooled: model 0.266 vs Pipeline 0.374, diff -0.109, 90% CI [-0.234, 0.010] (was -0.138, CI excluded 0). C9 table moves by < 0.002 per group, same keep decisions (S15_KEPT unchanged).
+- Reading: fielding is harder to predict from minor league batting lines, so accuracy against the defense-inclusive target is lower, but the model now trails the Pipeline list by less on that target. 2026 board: projected CF +0.50 WAR and SS +0.36 on average, other positions ~0; top 15 unchanged in membership except Voit (17 -> 14); Kepley 31 -> 16, Quintero 34 -> 23.
+- Spec updated (S4, X2, A4) as a recorded user decision.

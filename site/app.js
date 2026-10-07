@@ -257,7 +257,7 @@
       w.appendChild(a);
 
       /* 2. P(MLB) and WAR */
-      var s2 = sec("h-war", "Reach probability and production", "The odds he plays in the majors, and how many wins above replacement (our offense-only WAR, no fielding) he adds over his first six MLB seasons if he does.");
+      var s2 = sec("h-war", "Reach probability and production", "The odds he plays in the majors, and how many wins above replacement (our WAR, with MLB fielding from Baseball-Reference) he adds over his first six MLB seasons if he does.");
       s2.appendChild(h("dl", { class: "kv" },
         h("div", null, h("dt", { text: "P(MLB)" }), h("dd", { class: "num", text: pct(p.p_mlb, 1) })),
         h("div", null, h("dt", { text: "6-year WAR, mean" }), h("dd", { class: "num", text: num(p.war.mean, 1) })),
@@ -370,7 +370,7 @@
         h("li", { class: failDec.length ? "bad" : null }, h("b", { text: "Calibration misses in mid deciles (C4)" }), failDec.length ? failDec.map(function (d) { return "decile " + d.decile + " (" + (d.gap * 100).toFixed(1) + " pts)"; }).join(", ") + " exceed the 5 point tolerance; the model under-predicts reaching MLB there." : "All deciles within 5 points."),
         h("li", { class: s14 ? null : "bad" }, h("b", { text: "Batted-ball adjustment rejected (C8)" }), s14 ? "S14 passed its gate and is applied." : "Expected ISO and BABIP from exit velocity and launch angle did help year-ahead AAA prediction, but did not predict MLB results at least as well as the existing chain (n=" + C8.b.n + "), so S14 is not applied."),
         h("li", { class: "bad" }, h("b", { text: "Weight dropped for look-ahead (Q15)" }), "Listed weight is a current value and leaked post-snapshot information. It is shown on cards, never used by the model."),
-        h("li", { class: "bad" }, h("b", { text: "oWAR has no fielding (X2)" }), "My WAR is offense, baserunning and position only. It correlates with bWAR at r=" + f2(C1.r_owar_bwar) + " (C1); glove-first players are undervalued.")));
+        h("li", { class: "bad" }, h("b", { text: "Fielding is borrowed and only in the outcome" }), "MLB fielding runs come from Baseball-Reference (DRS-based), so the WAR target values defense, but no minor league input measures it; the model sees defense only through position mix and projected position.")));
       w.appendChild(P("The comparison to Pipeline is the one I would weight most. Hitters on a top 100 list already passed a scouting screen, so beating them on stats alone was always a long shot; the model sees age, level and production, and nothing about tools, swing, or makeup. It undervalues young, high-ceiling players for that reason. Where it is useful is breadth: it prices all " + M.coverage.players_2026.toLocaleString() + " hitters, including ones no list covers, with a range."));
 
       /* headline tables */
@@ -415,11 +415,11 @@
 
       /* war */
       w.appendChild(S("war", "WAR"));
-      w.appendChild(P("I wrote my own simplified WAR (oWAR) so the target does not depend on a fielding system that does not exist before 2016: wOBA batting runs from run values fit to 660 MLB team-seasons, park adjusted, plus baserunning (stolen bases and caught stealing, and double-play avoidance), a positional adjustment and a replacement level. No fielding. Against bWAR on " + C1.n.toLocaleString() + " player-seasons with 300+ PA, r = " + f3(C1.r_owar_bwar) + " (threshold " + C1.threshold + "). Against bWAR's own offensive components (batting, baserunning, double plays, position, replacement) r = " + f3(C1.r_owar_vs_bwar_offense) + ", so the gap is fielding."));
+      w.appendChild(P("I wrote my own simplified WAR: wOBA batting runs from run values fit to 660 MLB team-seasons, park adjusted, plus baserunning (stolen bases and caught stealing, and double-play avoidance), a positional adjustment and a replacement level. Fielding runs are the one borrowed piece: Baseball-Reference's runs_field (DRS-based), available for every season since 2005. Against bWAR on " + C1.n.toLocaleString() + " player-seasons with 300+ PA, r = " + f3(C1.r_owar_bwar) + " (threshold " + C1.threshold + "). That number is partly shared by construction, so the cleaner test of my own pieces is the offense-only version against bWAR's offensive components (batting, baserunning, double plays, position, replacement): r = " + f3(C1.r_owar_vs_bwar_offense) + "."));
       var gr = function (L) { return L.map(function (x) { return [x.name + " " + x.season, num(x.owar, 1), num(x.bwar, 1)]; }); };
-      w.appendChild(table(["Largest negative residuals", { t: "oWAR", n: 1 }, { t: "bWAR", n: 1 }], gr(C1.glove_first), { label: "Glove-first residuals", caption: "Elite defenders: oWAR is well below bWAR." }));
-      w.appendChild(table(["Largest positive residuals", { t: "oWAR", n: 1 }, { t: "bWAR", n: 1 }], gr(C1.bat_first), { label: "Bat-first residuals", caption: "Bad-defense sluggers: oWAR above bWAR." }));
-      w.appendChild(P("Baserunning agrees with bWAR at r = " + f2(C1.r_bsr_vs_bwar_br_dp) + "; my double-play term is an approximation because true opportunities need MLB play-by-play, and extra bases taken are not included. The training target is oWAR summed over a player's first six MLB seasons from debut."));
+      w.appendChild(table(["Largest negative residuals", { t: "My WAR", n: 1 }, { t: "bWAR", n: 1 }], gr(C1.glove_first), { label: "Negative residuals", caption: "My WAR below bWAR: remaining gaps (batting runs, park, position credit)." }));
+      w.appendChild(table(["Largest positive residuals", { t: "My WAR", n: 1 }, { t: "bWAR", n: 1 }], gr(C1.bat_first), { label: "Positive residuals", caption: "My WAR above bWAR." }));
+      w.appendChild(P("Baserunning agrees with bWAR at r = " + f2(C1.r_bsr_vs_bwar_br_dp) + "; my double-play term is an approximation because true opportunities need MLB play-by-play, and extra bases taken are not included. The training target is this WAR summed over a player's first six MLB seasons from debut."));
 
       /* features */
       w.appendChild(S("feat", "Features"));
@@ -453,9 +453,9 @@
       w.appendChild(table(["Rank"].concat(M.sensitivity.map(function (x) { return { t: (x.growth * 100).toFixed(2).replace(/\.?0+$/, "") + "% growth" + (x === M.sensitivity[0] ? " (base)" : ""), n: 1 }; })),
         M.sensitivity[0].top.map(function (_, i) { return [String(i + 1)].concat(M.sensitivity.map(function (x) { return x.top[i].name + " " + x.top[i].ev.toFixed(1); })); }),
         { label: "Sensitivity of top 10 to $/WAR growth", caption: "Name and expected surplus ($M), 2026 snapshot." }));
-      w.appendChild(table(["Control year", { t: "Mean oWAR", n: 1 }, { t: "Share of 6-year WAR", n: 1 }, { t: "n", n: 1 }],
+      w.appendChild(table(["Control year", { t: "Mean WAR", n: 1 }, { t: "Share of 6-year WAR", n: 1 }, { t: "n", n: 1 }],
         M.war_profile.map(function (x) { return [String(x.control_year), f2(x.mean_owar), pct(x.share), x.n]; }),
-        { label: "WAR control-year profile", caption: "Mean oWAR by control year for reached 2005 to 2017 debuts; missing seasons count as zero." }));
+        { label: "WAR control-year profile", caption: "Mean WAR by control year for reached 2005 to 2017 debuts; missing seasons count as zero." }));
 
       /* assumptions */
       w.appendChild(S("assume", "Assumptions"));
@@ -475,7 +475,7 @@
       w.appendChild(S("limits", "Limitations"));
       w.appendChild(h("ul", null,
         h("li", { text: "Stats only. No scouting grades, no swing data, no makeup, no injury history. Young high-ceiling players are underrated (the Pipeline backtest shows it)." }),
-        h("li", { text: "No fielding in WAR (X2). Glove-first players and catchers with elite defense are underrated; bat-only players are flattered." }),
+        h("li", { text: "No minor league defense input. MLB outcomes include fielding, but the model can only infer a prospect's glove from where he plays, so a plus defender at a bat-first position is underrated." }),
         h("li", { text: "Calibration undershoots in the middle of the P(MLB) range (table above); mid-probability players are somewhat more likely to reach than shown." }),
         h("li", { text: "Hitters only (X1). No pitchers; two-way players are partly captured." }),
         h("li", { text: "The 10th to 90th WAR range is built from binned out-of-fold residuals. On the 2013 to 2017 holdout it covers " + pct(hs.war_q10_q90_coverage, 0) + " of reached stat-group players and " + pct(M.holdout.prior.war_q10_q90_coverage, 0) + " of prior-group players against a nominal 80%." }),
