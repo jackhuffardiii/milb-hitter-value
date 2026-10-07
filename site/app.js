@@ -390,7 +390,7 @@
 
       /* results */
       w.appendChild(h("h2", { id: "results", text: "How well it works" }));
-      w.appendChild(P("I made every modeling decision on 2005 to 2012 data, then scored two holdout periods once each: 2013 to 2017, and a fresh 2018 to 2019 set that no version of the model had seen. The test I weight most is the comparison to MLB Pipeline's top 100 lists, since that is the bar any prospect model has to clear."));
+      w.appendChild(P("I made every modeling decision on 2005 to 2012 data. 2005 is where my minor league data begins, and stopping at 2012 means nearly every player in the training set has had time to either play out his first six MLB seasons or wash out, so the model learns from finished careers rather than ones still in progress. It also leaves later classes untouched for testing. I then scored two holdout periods once each: 2013 to 2017, and a fresh 2018 to 2019 set that no version of the model had seen. The test I weight most is the comparison to MLB Pipeline's top 100 lists, since that is the bar any prospect model has to clear."));
       w.appendChild(h("ul", { class: "results" },
         h("li", null, h("b", { text: "Beats a naive baseline" }), "On the 2013 to 2017 holdout, log loss for reaching MLB of " + r3(C3.logloss_model) + " vs " + r3(C3.logloss_baseline) + " for a baseline built on age, level, and OPS (n = " + n(C3.n) + ")."),
         h("li", null, h("b", { text: "Holds up on fresh data" }), "On 2018 to 2019, AUC of " + r2(fresh.auc) + " and log loss of " + r3(fresh.logloss) + " vs " + r3(freshBase) + " for the baseline (n = " + n(fresh.n) + "). Its WAR rankings there are only even with the baseline so far, with most of those careers still in progress."),
