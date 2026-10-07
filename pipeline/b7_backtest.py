@@ -96,7 +96,7 @@ def c2(d):
     res = {"n": int(len(d)), "per_year": {}, "top_n": {}}
     for y, g in d.groupby("list_year"):
         res["per_year"][int(y)] = {"n": int(len(g)), "spearman_model": sp(g.ev_war, g.realized),
-                                   "spearman_ba": sp(g.neg_rank, g.realized)}
+                                   "spearman_list": sp(g.neg_rank, g.realized)}
         for N in (10, 25):
             m, b = g.nlargest(N, "ev_war"), g.nsmallest(N, "rank")
             res["top_n"].setdefault(str(N), {})[int(y)] = {
@@ -104,7 +104,7 @@ def c2(d):
                 "model_mean_realized": float(m.realized.mean()), "list_mean_realized": float(b.realized.mean()),
                 "overlap": int(len(set(m.player_id) & set(b.player_id)))}
     pm, pb = sp(d.ev_war, d.realized), sp(d.neg_rank, d.realized)
-    res["pooled"] = {"spearman_model": pm, "spearman_ba": pb, "diff": pm - pb, "diff_ci90_boot2000": boot_diff(d)}
+    res["pooled"] = {"spearman_model": pm, "spearman_list": pb, "diff": pm - pb, "diff_ci90_boot2000": boot_diff(d)}
     return res
 
 

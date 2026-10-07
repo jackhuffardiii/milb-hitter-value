@@ -225,9 +225,12 @@ def main():
     d = d.assign(player_id=d.player_id.astype(int), round_num=pd.to_numeric(d["round"], errors="coerce"))
     d = d.sort_values(["player_id", "draft_year"])[["player_id", "draft_year", "round_num", "pick_overall",
                                                     "signing_bonus"]]
-    snap = snap.merge(d.groupby("player_id").tail(1).rename(columns={"draft_year": "dy"}), on="player_id", how="left")
-    ok = snap.dy.notna() & (snap.dy <= snap.season)
-    snap["international"] = ~ok
+    # latest draft record with draft_year <= s (a player drafted again later keeps his earlier record before then)
+    dd = snap[["player_id", "season"]].merge(d.rename(columns={"draft_year": "dy"}), on="player_id")
+    dd = dd[dd.dy <= dd.season].sort_values("dy").groupby(["player_id", "season"]).tail(1)
+    snap = snap.merge(dd, on=["player_id", "season"], how="left")
+    ok = snap.dy.notna()
+    snap["international"] = ~ok  # means "no draft record (1990+) on or before s": international or undrafted (Q17)
     snap["draft_year"] = snap.dy.where(ok)
     snap["years_since_draft"] = snap.season - snap.draft_year
     for c in ["round_num", "pick_overall", "signing_bonus"]:

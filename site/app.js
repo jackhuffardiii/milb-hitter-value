@@ -366,7 +366,7 @@
       w.appendChild(P("I trained on 2005 to 2012 snapshots, held out 2013 to 2017, and scored once. The honest results come first because they decide how much weight a reader should put on the dollar figures."));
       w.appendChild(h("ul", { class: "results" },
         h("li", null, h("b", { text: "Beats the naive baseline (C3)" }), "P(MLB) log loss " + f3(C3.logloss_model) + " vs " + f3(C3.logloss_baseline) + " for an age-vs-level plus OPS baseline; expected-WAR Spearman " + f3(C3.spearman_model) + " vs " + f3(C3.spearman_baseline) + " (n=" + C3.n.toLocaleString() + " holdout hitters)." + (C3.model_beats_baseline_logloss && C3.model_beats_baseline_spearman ? "" : " The model does not win both measures.")),
-        h("li", { class: ci[1] < 0 ? "bad" : null }, h("b", { text: "Loses to MLB Pipeline rankings (C2)" }), "Pooled Spearman vs realized six-year WAR: model " + f3(pool.spearman_model) + ", Pipeline list " + f3(pool.spearman_ba) + "; difference " + f3(pool.diff) + ", 90% bootstrap CI " + f3(ci[0]) + " to " + f3(ci[1]) + ". The model " + win2 + " the list (n=" + C2.n + ")."),
+        h("li", { class: ci[1] < 0 ? "bad" : null }, h("b", { text: "Loses to MLB Pipeline rankings (C2)" }), "Pooled Spearman vs realized six-year WAR: model " + f3(pool.spearman_model) + ", Pipeline list " + f3(pool.spearman_list) + "; difference " + f3(pool.diff) + ", 90% bootstrap CI " + f3(ci[0]) + " to " + f3(ci[1]) + ". The model " + win2 + " the list (n=" + C2.n + ")."),
         h("li", { class: failDec.length ? "bad" : null }, h("b", { text: "Calibration misses in mid deciles (C4)" }), failDec.length ? failDec.map(function (d) { return "decile " + d.decile + " (" + (d.gap * 100).toFixed(1) + " pts)"; }).join(", ") + " exceed the 5 point tolerance; the model under-predicts reaching MLB there." : "All deciles within 5 points."),
         h("li", { class: s14 ? null : "bad" }, h("b", { text: "Batted-ball adjustment rejected (C8)" }), s14 ? "S14 passed its gate and is applied." : "Expected ISO and BABIP from exit velocity and launch angle did help year-ahead AAA prediction, but did not predict MLB results at least as well as the existing chain (n=" + C8.b.n + "), so S14 is not applied."),
         h("li", { class: "bad" }, h("b", { text: "Weight dropped for look-ahead (Q15)" }), "Listed weight is a current value and leaked post-snapshot information. It is shown on cards, never used by the model."),
@@ -376,7 +376,7 @@
       /* headline tables */
       w.appendChild(h("h3", { text: "Backtest by list year" }));
       w.appendChild(table(["List year", { t: "n", n: 1 }, { t: "Model Spearman", n: 1 }, { t: "Pipeline Spearman", n: 1 }],
-        Object.keys(C2.per_year).map(function (y) { var d = C2.per_year[y]; return [y, d.n, f3(d.spearman_model), f3(d.spearman_ba)]; }),
+        Object.keys(C2.per_year).map(function (y) { var d = C2.per_year[y]; return [y, d.n, f3(d.spearman_model), f3(d.spearman_list)]; }),
         { label: "Per-year C2 results", caption: "Spearman vs realized six-year WAR among matched ranked hitters. Pipeline lists are used because Baseball America lists are paywalled (Q6). Censored and pre-2005 rows excluded." }));
       w.appendChild(h("h3", { text: "P(MLB) calibration on the 2013 to 2017 holdout" }));
       w.appendChild(calibrationChart(C4.deciles));

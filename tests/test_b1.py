@@ -65,7 +65,7 @@ def test_mlb_every_year():
 
 
 def test_draft_full_range():
-    assert set(draft.draft_year) == set(range(2005, 2027))
+    assert set(draft.draft_year) == set(range(1990, 2027))
     assert draft.player_id.notna().mean() > 0.9
     assert draft.signing_bonus.notna().sum() > 0
 
@@ -111,3 +111,14 @@ def test_mlb_matches_api_team_totals(season):
                                                 for lv, sp in {"aaa": 11, "aa": 12, "a+": 13, "a": 14, "rk": 16}.items()])
 def test_milb_api_matches_team_totals(season, level, sport):
     _check_totals(milb[(milb.season == season) & (milb.level == level)], sport, season)
+
+
+def test_history_backfill():  # Q17
+    h = pd.read_parquet(D + "milb_history.parquet")
+    assert set(h.season) == set(range(2000, 2005))
+    assert set(h.level) == {"aaa", "aa", "a+", "a", "a-", "rk"}
+    assert h.PA.sum() > 3_000_000 and not h.duplicated(["player_id", "season", "level", "league_id"]).any()
+
+
+def test_pull_date_recorded():
+    assert players.pulled_on.notna().all()

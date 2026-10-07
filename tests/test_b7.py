@@ -36,8 +36,8 @@ def test_backtest_json():
     d = json.load(open(DATA / "backtest.json"))
     assert {"C2", "C3", "C4"} <= set(d)
     c2 = d["C2"]["primary_excl_censored"]
-    vals = [c2["pooled"]["spearman_model"], c2["pooled"]["spearman_ba"]]
-    vals += [v[k] for v in c2["per_year"].values() for k in ("spearman_model", "spearman_ba")]
+    vals = [c2["pooled"]["spearman_model"], c2["pooled"]["spearman_list"]]
+    vals += [v[k] for v in c2["per_year"].values() for k in ("spearman_model", "spearman_list")]
     vals += [d["C3"]["primary_excl_censored"][k] for k in ("spearman_model", "spearman_baseline")]
     assert all(-1 <= v <= 1 for v in vals)
     assert len(d["C4"]["deciles"]) == 10
