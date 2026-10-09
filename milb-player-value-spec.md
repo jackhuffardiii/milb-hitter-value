@@ -50,7 +50,7 @@ Status: draft 2026-10-09. Decided via grill-me interview, 2026-10-09. Pre-regist
 
 | ID | What | Source | Lives in |
 |---|---|---|---|
-| D13 | MiLB season pitching 2000 to 2024 (per team stint: BF, GS, IP, H, 2B, 3B, HR, TB, BB, HBP, SO, GO, AO, line/pop outs, pitches, swings, whiffs) | repo release `season_player_pitching` (confirmed 2026-10-09) | `data/raw/milb_pitching/` |
+| D13 | MiLB season pitching 2005 to 2024 (per team stint: BF, GS, IP, H, 2B, 3B, HR, TB, BB, HBP, SO, GO, AO, line/pop outs, pitches, swings, whiffs) | repo release `season_player_pitching` (confirmed 2026-10-09; no files before 2005, so the 2000 to 2004 history in S18 comes from the Stats API per team, as Q17 does for hitters) | `data/raw/milb_pitching/` |
 | D14 | MiLB season pitching 2025 to 2026 | MLB Stats API | `data/raw/statsapi/` |
 | D15 | MLB pitching 2005 to 2026, incl. G and GS | MLB Stats API | `data/mlb_pitching.parquet` |
 | D16 | bWAR pitching (leverage, validation) | Baseball-Reference `war_daily_pitch`, direct download | `data/raw/bwar_pitch.csv` |
