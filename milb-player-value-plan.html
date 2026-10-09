@@ -1,0 +1,291 @@
+<meta charset="utf-8">
+<title>MiLB Player Value v2</title>
+<style>
+  /* Layout: same ledger as the v1 plan page. ID gutter on the left, one claim per row, sections in spec order. */
+  :root {
+    --bg: #f4f6f7; --panel: #ffffff; --ink: #16202a; --muted: #5d6b78;
+    --line: #d3dbe2; --rule: #b9c5ce;
+    --accent: #17516e; --accent-soft: #e2ecf2;
+    --warn: #8a5a12; --warn-soft: #f7efdf;
+    --cut: #7d4145; --cut-soft: #f4e6e6;
+    --new: #2f6b3a; --new-soft: #e3f0e4;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171c; --panel: #1a2027; --ink: #e6ebf0; --muted: #8fa0ae;
+      --line: #2a333c; --rule: #3a4650;
+      --accent: #6fb2d6; --accent-soft: #16303f;
+      --warn: #d3a45e; --warn-soft: #2c2417;
+      --cut: #cf8b8b; --cut-soft: #2d1e1f;
+      --new: #8fc79a; --new-soft: #1a2c1e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12171c; --panel: #1a2027; --ink: #e6ebf0; --muted: #8fa0ae;
+    --line: #2a333c; --rule: #3a4650;
+    --accent: #6fb2d6; --accent-soft: #16303f;
+    --warn: #d3a45e; --warn-soft: #2c2417;
+    --cut: #cf8b8b; --cut-soft: #2d1e1f;
+    --new: #8fc79a; --new-soft: #1a2c1e;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 var(--sans);
+    margin: 0; padding-block: 3rem 6rem; padding-inline: 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; }
+  code { font: .88em var(--mono); }
+
+  header { border-bottom: 2px solid var(--rule); padding-bottom: 1.5rem; }
+  .eyebrow { font: 500 .7rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+             color: var(--muted); margin: 0 0 .9rem; }
+  h1 { font-size: clamp(1.75rem, 4.5vw, 2.6rem); line-height: 1.1; margin: 0 0 .7rem;
+       letter-spacing: -.025em; font-weight: 600; text-wrap: balance; }
+  .claim { font-size: 1.08rem; color: var(--muted); margin: 0; max-width: 44rem; text-wrap: pretty; }
+  .meta { display: flex; flex-wrap: wrap; gap: .45rem .9rem; align-items: center; margin-top: 1.4rem;
+          font: 500 .72rem/1 var(--mono); letter-spacing: .04em; color: var(--muted); }
+  .status { letter-spacing: .12em; text-transform: uppercase; padding: .3rem .5rem;
+            border: 1px solid var(--warn); color: var(--warn); background: var(--warn-soft); }
+
+  .howto { background: var(--accent-soft); color: var(--ink); padding: .9rem 1.1rem;
+           margin-top: 1.75rem; font-size: .9rem; border: 1px solid var(--line); }
+  .howto b { color: var(--accent); }
+  .howto code, .meta code { font: 600 .85em var(--mono); background: var(--panel);
+                            padding: .12rem .4rem; border: 1px solid var(--line); }
+
+  section { margin-top: 3rem; }
+  h2 { font: 600 .72rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+       color: var(--muted); margin: 0 0 .2rem; padding-bottom: .7rem; border-bottom: 1px solid var(--rule); }
+  .lede { color: var(--muted); font-size: .92rem; margin: .8rem 0 0; max-width: 44rem; }
+
+  .row { display: grid; grid-template-columns: 4.25rem 1fr; gap: 1rem;
+         padding: .85rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .row:last-child { border-bottom: none; }
+  .row > p { margin: 0; min-width: 0; text-wrap: pretty; }
+  .id { font: 600 .74rem/1.5 var(--mono); letter-spacing: .05em; color: var(--accent);
+        border: 1px solid var(--line); background: var(--panel); text-align: center;
+        padding: .15rem 0; user-select: all; font-variant-numeric: tabular-nums; }
+  .why { display: block; color: var(--muted); font-size: .89rem; margin-top: .3rem; }
+  .tag { font: 600 .62rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+         padding: .18rem .35rem; margin-left: .4rem; vertical-align: .12em;
+         color: var(--new); background: var(--new-soft); }
+  .tag.gate { color: var(--accent); background: var(--accent-soft); }
+  .tag.review { color: var(--warn); background: var(--warn-soft); }
+
+  .cut .id { color: var(--cut); background: var(--cut-soft); border-color: var(--cut-soft); }
+  .cut > p { color: var(--muted); }
+  .ask .id { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-soft); }
+
+  .diagram { background: var(--panel); border: 1px solid var(--line); padding: 1.4rem 1.25rem 1.2rem; margin: 1rem 0 0; }
+  .track { display: grid; grid-template-columns: 6.5rem 1fr; gap: .9rem; align-items: center; padding: .55rem 0; }
+  .track + .track { border-top: 1px dashed var(--line); }
+  .track-label { font: 600 .66rem/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .flow { display: flex; align-items: stretch; overflow-x: auto; padding-bottom: .3rem; min-width: 0; }
+  .stage { flex: 0 0 auto; min-width: 6.2rem; text-align: center; border: 1px solid var(--rule);
+           background: var(--bg); padding: .6rem .55rem; font: 500 .78rem/1.35 var(--sans); }
+  .stage small { display: block; font: 500 .63rem/1.3 var(--mono); color: var(--muted); margin-top: .2rem; }
+  .stage.gate { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+  .stage.new { border-color: var(--new); }
+  .stage.end { border-width: 2px; border-color: var(--ink); font-weight: 650; }
+  .arrow { flex: 0 0 auto; align-self: center; padding: 0 .4rem; font: 500 .9rem var(--mono); color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-top: 1rem;
+            font: 500 .7rem/1.4 var(--mono); color: var(--muted); }
+  .legend i { display: inline-block; width: .75rem; height: .75rem; border: 1px solid var(--rule); vertical-align: -.1em; margin-right: .35rem; }
+  .legend i.new { border-color: var(--new); }
+  .legend i.gate { border-color: var(--accent); background: var(--accent-soft); }
+  figcaption { color: var(--muted); font-size: .85rem; margin-top: .9rem; }
+  figcaption code { font-weight: 600; color: var(--accent); }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .7rem .7rem .7rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 600 .68rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding-bottom: .8rem; }
+  td.id-cell { font: 600 .74rem var(--mono); color: var(--accent); white-space: nowrap; }
+  td code { color: var(--muted); }
+
+  ul.predict { margin: .9rem 0 0; padding-left: 1.2rem; max-width: 46rem; }
+  ul.predict li { margin: .35rem 0; }
+
+  @media (max-width: 34rem) {
+    .row { grid-template-columns: 3.6rem 1fr; gap: .7rem; }
+    .track { grid-template-columns: 1fr; gap: .4rem; }
+  }
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Plan · v2 · extends MiLB Hitter Value</p>
+  <h1>MiLB Player Value v2: pitchers</h1>
+  <p class="claim">Pitchers join hitters on one surplus-dollar board. Both groups share a WAR scale anchored every season to Baseball-Reference's 590 hitter / 410 pitcher split, so a 2-WAR pitcher and a 2-WAR hitter are worth the same.</p>
+  <div class="meta">
+    <span class="status">draft · pre-registered</span>
+    <span>decided 2026-10-09 via grill-me</span>
+    <span>spec: <code>milb-player-value-spec.md</code></span>
+    <span>branch: <code>v2-pitchers</code></span>
+  </div>
+</header>
+<div class="howto"><b>Every block has an ID.</b> Comment on any block, or write <code>S19 should be X, not Y</code>, and only that block changes. IDs continue v1's numbering and are never reused. Anything v1 already settled and v2 doesn't amend carries over unchanged. Tags: <span class="tag">new</span> new in v2, <span class="tag gate">gated</span> ships only if a test passes, <span class="tag review">review</span> filled in while drafting, not decided in the interview.</div>
+
+<section>
+<h2>Problem</h2>
+<div class="row"><span class="id">P3</span><p>v1 values only hitters, so it can't answer the most common questionnaire comparison: hitter X or pitcher Y.</p></div>
+<div class="row"><span class="id">P4</span><p>v1 hitter WAR uses a fixed replacement level (20 runs per 600 PA), and its season total drifts from 639 (2014) to 549 (2026). bWAR position-player WAR holds at 587 to 590 every season.<span class="why">On a combined board that drift would tilt hitters against pitchers depending on era.</span></p></div>
+</section>
+
+<section>
+<h2>Architecture</h2>
+<figure class="diagram">
+  <div class="track">
+    <span class="track-label">Pitcher inputs</span>
+    <div class="flow">
+      <div class="stage new">Repo + Stats API<small>MiLB pitching 2000–26</small></div><span class="arrow">→</span>
+      <div class="stage">Park factors<small>existing B3</small></div><span class="arrow">→</span>
+      <div class="stage new">Pitcher MLEs<small>K, BB, GB, ISOcon</small></div><span class="arrow">→</span>
+      <div class="stage new gate">mERA<small>level-varying slopes</small></div><span class="arrow">→</span>
+      <div class="stage new">Features<small>+ role, P(SP)</small></div>
+    </div>
+  </div>
+  <div class="track">
+    <span class="track-label">Pitcher label</span>
+    <div class="flow">
+      <div class="stage new">MLB pitching<small>Stats API, G/GS</small></div><span class="arrow">→</span>
+      <div class="stage new">bWAR pitching<small>leverage, validation</small></div><span class="arrow">→</span>
+      <div class="stage new">Pitcher WAR<small>SP/RP repl, sums to 410</small></div><span class="arrow">→</span>
+      <div class="stage">6-yr WAR target<small>unregressed</small></div>
+    </div>
+  </div>
+  <div class="track">
+    <span class="track-label">Models → $</span>
+    <div class="flow">
+      <div class="stage">Hazard + WAR<small>s ≤ 2012 CV</small></div><span class="arrow">→</span>
+      <div class="stage gate">Drift check<small>forward-chained CV</small></div><span class="arrow">→</span>
+      <div class="stage gate">Holdout, once<small>2013–17, 2018–19</small></div><span class="arrow">→</span>
+      <div class="stage">Surplus $<small>existing A15</small></div><span class="arrow">→</span>
+      <div class="stage end">Combined board<small>hitters + pitchers</small></div>
+    </div>
+  </div>
+  <div class="track">
+    <span class="track-label">Hitters</span>
+    <div class="flow">
+      <div class="stage new">Re-anchor WAR<small>sums to 590</small></div><span class="arrow">→</span>
+      <div class="stage">v1 chain rerun<small>no model change</small></div><span class="arrow">→</span>
+      <div class="stage">Restated $<small>holdouts re-reported</small></div><span class="arrow">→</span>
+      <div class="stage end">Combined board</div>
+    </div>
+  </div>
+  <div class="legend"><span><i class="new"></i>new in v2</span><span><i class="gate"></i>gate or single-look test</span><span><i></i>reused from v1</span></div>
+  <figcaption>Comment on the diagram as <code>ARCH</code>. Pitchers reuse v1's park factors, translation method, hazard model, and surplus model. What's new is the WAR label, mERA, and role. The hitter track changes only the replacement anchor.</figcaption>
+</figure>
+</section>
+
+<section>
+<h2>In scope</h2>
+<div class="row"><span class="id">S17</span><p>One WAR and $ scale for hitters and pitchers. Replacement level is solved every season so position players sum to 590 WAR and pitchers to 410 per 2,430 MLB games (2020 prorated to 60 games). Hitter WAR is re-anchored and every hitter value restated.<span class="tag">new</span><span class="why">Baseball-Reference's split, chosen over FanGraphs' 570/430 because v1 already validates against bWAR and borrows its fielding runs.</span></p></div>
+<div class="row"><span class="id">S18</span><p>Pitcher data layer: MiLB pitching 2005–2026 (plus 2000–04 history), MLB pitching 2005–2026, stints aggregated, rates recomputed from counts.<span class="tag">new</span></p></div>
+<div class="row"><span class="id">S19</span><p>Pitcher WAR. Strikeouts, walks, HBP, and home runs are valued with v1's BaseRuns run values. Non-HR balls in play get the league-average value, plus each 2B and 3B allowed charged at its run value above a single. Park adjusted with B3 factors. Separate SP and RP replacement per appearance. Relief runs scaled by (1 + gmLI) / 2. Scaled to 410 per season.<span class="tag">new</span><span class="tag review">review</span><span class="why">Unregressed: it measures value actually delivered, so a pitcher who really suppressed hard contact gets paid for it. The contact-term construction and the leverage formula were filled in while drafting.</span></p></div>
+<div class="row"><span class="id">S20</span><p>Pitcher MLEs: MLB-equivalent K%, BB%, HBP%, HR%, GB%, and ISO-on-contact allowed, from matched pairs, regressed toward the source league-season mean by sample size.<span class="tag">new</span></p></div>
+<div class="row"><span class="id">S21</span><p><b>mERA</b> (Majors-Equivalent Run Average): a predictive run average on the ERA scale built from MLE K%, BB%, GB%, and ISO-on-contact. Bayesian regression with level and league intercepts and level-varying slopes, partially pooled. Fit to predict next-season MLE RA9.<span class="tag">new</span><span class="tag gate">gated</span><span class="why">Ported from my college pitching metric, with the exit-velocity/launch-angle contact grid replaced by ISO-on-contact, because no 2005–2017 row has EV/LA. Gamma vs Normal likelihood and varying vs fixed slopes are both picked by s ≤ 2012 CV.</span></p></div>
+<div class="row"><span class="id">S22</span><p>mERA ladder on the card: mERA at the pitcher's own level, translated to each level above it and to MLB.<span class="tag">new</span><span class="why">Display only. Uses B4's chained translation factors.</span></p></div>
+<div class="row"><span class="id">S23</span><p>Pitcher models, fit separately from hitters: hazard model for P(MLB) and ETA, plus E[WAR in first 6 MLB seasons | reached] with rank-based model selection and the residual-scale variance model.<span class="tag">new</span><span class="why">Features: MLEs, mERA (if it passes C15), age vs level, highest level, throwing hand, role (GS share, IP per game, pitches per outing), trajectory, progression pace, height and weight.</span></p></div>
+<div class="row"><span class="id">S24</span><p>P(MLB starter): logistic model on MiLB role features and MLEs, trained on 2016–2025 debuts. A pitcher counts as a starter if most of his appearances in his first two MLB seasons were starts.<span class="tag">new</span><span class="tag review">review</span><span class="why">Shown on the card for context only. Realized role is already in the WAR target. Role is known at debut, so this model can learn from modern bullpen usage.</span></p></div>
+<div class="row"><span class="id">S25</span><p>Eligibility: 150+ batters faced at A or above over the last 2 seasons (3 if under 20 IP in the snapshot season), and under 50 MLB IP. Everyone else gets a pitcher-specific draft prior (slot, bonus, high school vs college), flagged low confidence.<span class="tag">new</span></p></div>
+<div class="row"><span class="id">S26</span><p>Injury flag on the card from injured-list placements in the snapshot season.<span class="tag">new</span><span class="why">Display only. The target already prices average attrition.</span></p></div>
+<div class="row"><span class="id">S27</span><p>Arsenal table on tracked pitchers' cards (AAA 2023+, Low-A FSL 2021+): usage, velocity, spin, extension, and whiff% by pitch family.<span class="tag">new</span><span class="why">Display only. Comes from grouped Savant CSVs, so no pitch-level downloads.</span></p></div>
+<div class="row"><span class="id">S28</span><p>Tracking contact adjustment: for tracked pitchers, blend Savant xwOBA-on-contact allowed into the contact term by sample size before mERA and the models.<span class="tag">new</span><span class="tag gate">gated</span><span class="why">Ships only if it passes C17.</span></p></div>
+<div class="row"><span class="id">S29</span><p>Two-way players: anyone eligible in both pipelines gets both projections, and board value is their sum, labeled "if both paths stick". Hitter-seasons logged as a pitcher stay out of hitter training.<span class="tag">new</span></p></div>
+<div class="row"><span class="id">S30</span><p>Combined site: one leaderboard ranked by surplus $ with an All / Hitters / Pitchers filter and a role column. Pitcher cards mirror hitter cards, plus the mERA ladder, P(SP), arsenal, and IL flag. The methodology page adds a pitcher section, the split sensitivity, and the drift test.<span class="tag">new</span></p></div>
+<div class="row"><span class="id">S31</span><p>2026 offseason snapshot rerun for hitters and pitchers, and published.</p></div>
+</section>
+
+<section>
+<h2>Deliberately not in v2</h2>
+<div class="row cut"><span class="id">X8</span><p>A custom hitter/pitcher WAR split.<span class="why">The market-consistent Baseball-Reference split is used, and sensitivity is reported instead (C19).</span></p></div>
+<div class="row cut"><span class="id">X9</span><p>Injury history as a model feature.<span class="why">MiLB injured-list coverage before about 2015 is uneven, so training and scoring inputs would differ.</span></p></div>
+<div class="row cut"><span class="id">X10</span><p>A Stuff+ model on MiLB pitch-level data.<span class="why">GBs of downloads, and it would still be display or adjustment only. Candidate for v3.</span></p></div>
+<div class="row cut"><span class="id">X11</span><p>An explicit SP/RP mixture valuation.<span class="why">Splits a small training set three ways.</span></p></div>
+<div class="row cut"><span class="id">X12</span><p>Recency sample weights.<span class="why">Drift is handled by A19.</span></p></div>
+<div class="row cut"><span class="id">X13</span><p>pybaseball.<span class="why">No MiLB support. Its Baseball-Reference function wraps the same download v1 already does.</span></p></div>
+<div class="row cut"><span class="id">X14</span><p>Renaming the Netlify site.<span class="why">Stays at milb-hitter-value.netlify.app so existing links keep working.</span></p></div>
+</section>
+
+<section>
+<h2>Approach</h2>
+<div class="row"><span class="id">A17</span><p>A shared league-wide anchor is what makes cross-position WAR comparable.<span class="why">590/410 matches bWAR, which v1 already uses for validation and fielding.</span></p></div>
+<div class="row"><span class="id">A18</span><p>mERA is an input, not the target.<span class="why">Its job is forecasting. The 6-year WAR target stays unregressed so real contact management gets paid for. mERA stays as a feature only if it beats the raw components.</span></p></div>
+<div class="row"><span class="id">A19</span><p>Era drift since 2005 (K% up, velocity up, fewer starter innings, the pitch clock) is absorbed by league-season-relative MLEs, per-season anchoring, per-appearance SP/RP replacement, censored modern rows in the hazard, and P(SP) trained on modern debuts.<span class="why">Then tested rather than assumed: forward-chained CV (C18) and the 2018–19 holdout (C20).</span></p></div>
+<div class="row"><span class="id">A20</span><p>The WAR model trains on the latest complete-window snapshots (about s ≤ 2017, or the cutoff where under 2% of outcomes are censored), chosen on s ≤ 2012 data.</p></div>
+<div class="row"><span class="id">A21</span><p>The mERA Bayesian fit runs in Python inside the pipeline; library per Q22.</p></div>
+</section>
+
+<section>
+<h2>Data</h2>
+<div class="scroll"><table>
+<tr><th>id</th><th>what</th><th>where it comes from</th><th>where it lives</th></tr>
+<tr><td class="id-cell">D13</td><td>MiLB season pitching 2000–2024, per team stint (BF, GS, IP, hits by type, HR, BB, HBP, SO, GO/AO, pitches, swings, whiffs)</td><td>repo release <code>season_player_pitching</code>, confirmed 2026-10-09</td><td><code>data/raw/milb_pitching/</code></td></tr>
+<tr><td class="id-cell">D14</td><td>MiLB season pitching 2025–2026</td><td>MLB Stats API</td><td><code>data/raw/statsapi/</code></td></tr>
+<tr><td class="id-cell">D15</td><td>MLB pitching 2005–2026, with G and GS</td><td>MLB Stats API</td><td><code>data/mlb_pitching.parquet</code></td></tr>
+<tr><td class="id-cell">D16</td><td>bWAR pitching: leverage and validation</td><td>Baseball-Reference <code>war_daily_pitch</code></td><td><code>data/raw/bwar_pitch.csv</code></td></tr>
+<tr><td class="id-cell">D17</td><td>MiLB pitcher arsenal by pitch family, 2021–2026</td><td>Baseball Savant minors CSV, grouped</td><td><code>data/raw/savant_splits/</code></td></tr>
+<tr><td class="id-cell">D18</td><td>Injured-list placements, snapshot season</td><td>Stats API transactions</td><td><code>data/raw/statsapi/</code></td></tr>
+</table></div>
+</section>
+
+<section>
+<h2>Done means</h2>
+<div class="row"><span class="id">C13</span><p>Every season 2005–2026, position players sum to 590 WAR and pitchers to 410 (2020 prorated), within 1 WAR.<span class="tag review">review</span></p></div>
+<div class="row"><span class="id">C14</span><p>Pitcher WAR vs bWAR pitching: r ≥ 0.75 on MLB pitcher-seasons with 100+ IP. Reliever subset reported.<span class="tag review">review</span><span class="why">Lower bar than hitters' 0.85 because ours is FIP-based and bWAR is runs-allowed-based. Gaps documented.</span></p></div>
+<div class="row"><span class="id">C15</span><p>mERA gate: kept as a model feature only if it improves s ≤ 2012 out-of-fold P(MLB) log loss or WAR Spearman without worsening the other. Varying slopes kept only if they beat fixed slopes on held-out next-season MLE RA9.<span class="why">Otherwise display only, and the null result is reported.</span></p></div>
+<div class="row"><span class="id">C16</span><p>Level-step test for pitchers: K%, BB%, GB% MLE changes for movers vs same-level repeaters within ±1 SE at A→A+, A+→AA, AA→AAA.</p></div>
+<div class="row"><span class="id">C17</span><p>Tracking gate: on AAA 2023–2025, blended contact predicts next-season contact allowed with lower RMSE than observed.<span class="why">If it fails, S28 is dropped and the null result is reported.</span></p></div>
+<div class="row"><span class="id">C18</span><p>Drift check: forward-chained CV (train ≤ 2009, test 2010–12) vs random folds on s ≤ 2012, both reported.</p></div>
+<div class="row"><span class="id">C19</span><p>Split sensitivity: how the combined 2026 top 50 changes at 57/43 and 61/39, reported on the methodology page.</p></div>
+<div class="row"><span class="id">C20</span><p>One holdout look for pitchers: 2013–17 vs MLB Pipeline top-100 pitchers and a naive age-vs-level + K−BB% baseline, plus 2018–19. Reported whichever way it goes. The combined board reports one Spearman across hitters and pitchers.</p></div>
+<div class="row"><span class="id">C21</span><p>Hitter restatement: hitter holdout metrics re-reported after re-anchoring (2013–17 look #6, 2018–19 look #2), with no other hitter change.</p></div>
+<div class="row"><span class="id">C22</span><p>v1's C5 (traceability, one-command rebuild), C6 (smell test), and C7 (phone width) apply to pitcher cards and the combined board.</p></div>
+</section>
+
+<section>
+<h2>Assumptions and open questions</h2>
+<div class="row ask"><span class="id">Q19</span><p>The gmLI column in <code>war_daily_pitch</code> is verified in B17.<span class="why">If it's missing, relievers get no leverage credit and the methodology page says so.</span></p></div>
+<div class="row ask"><span class="id">Q20</span><p>The SP/RP replacement gap is fixed at the FanGraphs convention (about .380 vs .470 win%). Only the overall level is solved per season.</p></div>
+<div class="row ask"><span class="id">Q21</span><p>mERA target rows need 100+ batters faced in the next season, weighted by BF.</p></div>
+<div class="row ask"><span class="id">Q22</span><p>Bayesian library for mERA: PyMC (a new pinned dependency) or an empirical-Bayes approximation in existing dependencies. Decided in B19 before any fit.<span class="why">Partially pooled varying slopes need a real hierarchical fit.</span></p></div>
+<div class="row ask"><span class="id">Q23</span><p>The two-way sum overstates players whose careers end up on one path. Stated on the card and the methodology page.</p></div>
+<div class="row ask"><span class="id">Q24</span><p>Restating hitters changes every published hitter value, including figures already cited. Hold new citations until v2 publishes.</p></div>
+<div class="row ask"><span class="id">Q25</span><p>Pitcher translation pairs use 300 batters faced, mirroring v1's 300 PA.</p></div>
+</section>
+
+<section>
+<h2>Pre-registration</h2>
+<p class="lede">Committed before any pitcher model is fit. Every pitcher choice is made on s ≤ 2012 CV, and both pitcher holdouts are opened once, in B23. Expected directions:</p>
+<ul class="predict">
+  <li>Re-anchoring raises 2021–2026 hitter WAR (v1 sums 545–591) and lowers 2014–15 (638–639). Training-era hitter targets fall about 4% on average. 2026 hitter rank order barely moves (Spearman with current values ≥ 0.98).</li>
+  <li>The age-vs-level + K−BB% baseline is hard to beat. The model's margin over it should be smaller than v1's hitter margin over age + OPS.</li>
+  <li>mERA (C15) and the tracking adjustment (C17) may fail their gates. Either outcome gets reported.</li>
+  <li>Forward-chained CV scores worse than random folds. The gap measures drift.</li>
+  <li>Pitcher P(MLB) at a given level and age is lower than hitters', and the 10–90 WAR range is wider.</li>
+</ul>
+</section>
+
+<section>
+<h2>Build order</h2>
+<div class="row"><span class="id">B15</span><p>Pre-registration commit, then re-anchoring: per-season replacement in B2, hitter chain rerun through B8, C13 for hitters, C21.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B16</span><p>Pitcher data layer: D13, D14, D15, D18, stints aggregated, rates recomputed, sanity checks.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B17</span><p>Pitcher WAR, D16 download, C13 for pitchers, C14.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B18</span><p>Pitcher translations and MLEs, C16.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B19</span><p>mERA fit, library decision, ladder, slope test.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B20</span><p>Pitcher features, P(SP), mERA feature gate.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B21</span><p>Tracking layer: arsenal, contact adjustment, C17.<span class="why">S</span></p></div>
+<div class="row"><span class="id">B22</span><p>Pitcher models and draft prior, drift check (C18).<span class="why">M</span></p></div>
+<div class="row"><span class="id">B23</span><p>Single pitcher holdout evaluation (C20).<span class="why">S</span></p></div>
+<div class="row"><span class="id">B24</span><p>Surplus $ for pitchers, two-way sum, combined board, split sensitivity (C19).<span class="why">S</span></p></div>
+<div class="row"><span class="id">B25</span><p>Site and methodology.<span class="why">M</span></p></div>
+<div class="row"><span class="id">B26</span><p>2026 snapshot run, smell test on the combined top 50, publish.<span class="why">S</span></p></div>
+</section>
+</div>
