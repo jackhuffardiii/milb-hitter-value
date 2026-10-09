@@ -159,13 +159,13 @@ def war():
     return out
 
 
-def target(w):
-    pl = pd.read_parquet(DATA / "players.parquet")
+def target(w, col="owar", players_file="players.parquet", out_file="war_target.parquet"):
+    pl = pd.read_parquet(DATA / players_file)
     pl = pl[pl.mlb_debut_date.notna()][["player_id", "mlb_debut_date"]]
     pl["debut_season"] = pl.mlb_debut_date.dt.year
     m = w.merge(pl, on="player_id")
     m = m[(m.season >= m.debut_season) & (m.season <= m.debut_season + 5)]
-    a = m.groupby("player_id").agg(war_6yr=("owar", "sum"), n_seasons_observed=("season", "nunique"))
+    a = m.groupby("player_id").agg(war_6yr=(col, "sum"), n_seasons_observed=("season", "nunique"))
     t = pl.drop(columns="mlb_debut_date").merge(a, on="player_id", how="left")
     # debut with no hitting PA in the window (pinch-runner/defensive sub, pitcher, or a pre-2005 debut whose window
     # predates the data; the latter are flagged pre2005 and excluded from training) produced zero hitting value
@@ -173,7 +173,7 @@ def target(w):
     t["n_seasons_observed"] = t.n_seasons_observed.fillna(0).astype(int)
     t["censored"] = t.debut_season + 5 > 2026
     t["pre2005"] = t.debut_season < 2005
-    t.to_parquet(DATA / "war_target.parquet")
+    t.to_parquet(DATA / out_file)
     return t
 
 

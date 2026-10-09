@@ -72,7 +72,7 @@ Status: draft 2026-10-09. Decided via grill-me interview, 2026-10-09. Pre-regist
 
 ## Open questions and assumptions
 
-- **Q19** gmLI column in `war_daily_pitch`: name and coverage verified in B17. If missing, relievers get no leverage credit and the methodology page says so.
+- **Q19** gmLI column in `war_daily_pitch`: resolved in B17. The column is `GR_leverage_index_avg` (average leverage on entering in relief; 1.0 for pure starters), present on 100% of 2005 to 2026 rows. Weighted by relief outs across stints. B17 also borrows `IPouts_start` / `IPouts_relief` for the SP/RP outs split (GS / G where bWAR has no row).
 - **Q20** SP/RP replacement gap fixed at the FanGraphs convention (about .380 vs .470 win%); only the overall level is solved per season.
 - **Q21** mERA target rows need 100+ BF in the next season; pairs weighted by BF.
 - **Q22** Bayesian library for mERA (e.g. PyMC, a new pinned dependency) vs an empirical-Bayes approximation in existing dependencies. Decided in B19 before any fit; varying slopes require a real hierarchical fit.

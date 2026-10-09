@@ -253,7 +253,7 @@
 
 <section>
 <h2>Assumptions and open questions</h2>
-<div class="row ask"><span class="id">Q19</span><p>The gmLI column in <code>war_daily_pitch</code> is verified in B17.<span class="why">If it's missing, relievers get no leverage credit and the methodology page says so.</span></p></div>
+<div class="row ask"><span class="id">Q19</span><p>Resolved in B17: leverage is <code>GR_leverage_index_avg</code> in <code>war_daily_pitch</code>, on every 2005–2026 row.<span class="why">Average leverage when entering in relief (1.0 for pure starters), weighted by relief outs. B17 also takes the starter/relief innings split from the same file.</span></p></div>
 <div class="row ask"><span class="id">Q20</span><p>The SP/RP replacement gap is fixed at the FanGraphs convention (about .380 vs .470 win%). Only the overall level is solved per season.</p></div>
 <div class="row ask"><span class="id">Q21</span><p>mERA target rows need 100+ batters faced in the next season, weighted by BF.</p></div>
 <div class="row ask"><span class="id">Q22</span><p>Bayesian library for mERA: PyMC (a new pinned dependency) or an empirical-Bayes approximation in existing dependencies. Decided in B19 before any fit.<span class="why">Partially pooled varying slopes need a real hierarchical fit.</span></p></div>

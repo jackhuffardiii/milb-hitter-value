@@ -442,3 +442,13 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - D18: transactions endpoint filters by sportId and is not truncated (monthly sums equal the full-year pull); rows deduped (4,051 -> 3,683); il_days 7/10/15/60, NaN for "full-season" wording.
 - League sanity: MLB K% .164 (2005) -> .230 (2019) -> .221 (2026); 2026 MiLB BB% .11-.16.
 - Tests: 134 passed, 2 xfailed (tests/test_b16.py adds 28 cases). Runs need github.com and statsapi.mlb.com reachable (404s are not cached).
+
+### B17 pitcher WAR (b17_pitch_war; S19, D16, Q19, Q20, C13, C14), 2026-10-09
+- D16: `data/raw/bwar_pitch.csv` (war_daily_pitch, 15 MB). Its WAR sums to 410.0 every season (2020: 151.9), confirming the S17 split.
+- Q19 resolved: leverage column is `GR_leverage_index_avg` (1.0 for pure starters; relievers 40+ IP median 1.28), 100% coverage. Relief-outs weighted across stints. SP/RP outs split from bWAR `IPouts_start`/`IPouts_relief` (sum to IPouts on 99.7% of rows); GS / G fallback.
+- Formula: runs allowed above average = rv_out x SO + rv_uBB_HBP x (uBB + HBP) + rv_HR x HR + v_BIP x BIP (league-season BIP value) + contact term (2B and 3B allowed minus league rate per BIP, at rv_2B - rv_1B and rv_3B - rv_1B). IBB excluded. Park: counts divided by (1 + pf) / 2 per team stint; removed events return as BIP. Wins above average = runs saved / RPW (league RPW, same as hitters), relief share x (1 + gmLI) / 2. Replacement: starter outs get +0.09 wins/9 over relief (Q20); relief level solved per season so pitcher WAR sums to 410 x games / 2430; leverage multiplies relief replacement too (FanGraphs convention).
+- Solved relief replacement 0.019 to 0.029 wins/9 (FanGraphs uses 0.03): not forced, so event values look calibrated.
+- C13 (pitchers) passes: within 0.2 WAR every season (2020 151.5). C14 passes: r = .823 vs bWAR at 100+ IP (n = 2,904); relievers 40+ IP, under 5 GS: r = .712 (n = 3,657, reported). Largest gaps are FIP-vs-RA9 cases (Nola 2018 5.6 vs 9.7, Iwakuma 2013 3.2 vs 7.0, Godley 2018 3.0 vs -0.9).
+- Contact term is small: SD 1.8 runs per 600 BF vs 11.3 for total runs above average.
+- Outputs: `mlb_pitch_war.parquet` (16,388 player-seasons: outs split, fip_runs, contact_runs, raa_runs, gmLI, lev, repl_rp_per9, repl_wins, pwar, bWAR), `pitch_war_target.parquet` (5,083 debuted pitchers; b2 `target()` now takes col / players_file / out_file, hitter output unchanged). Position players who pitched are included (they count toward bWAR's 410 too); the hitter-vs-pitcher split for training is B20's call.
+- Tests: 140 passed, 2 xfailed (tests/test_b17.py, 6 tests).
