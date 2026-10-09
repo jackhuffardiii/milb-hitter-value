@@ -232,10 +232,8 @@
     var main = document.getElementById("main");
     var id = new URLSearchParams(location.search).get("id");
     if (!/^\d+$/.test(id || "")) { chrome("player"); main.appendChild(h("div", { class: "wrap" }, h("div", { class: "err" }, "No player selected. ", h("a", { href: "index.html", text: "Pick one from the leaderboard." })))); return; }
-    load("data/players/" + id + ".json").then(function (p) {
-      return [p, p];
-    }).then(function (pm) {
-      var p = pm[0];
+    Promise.all([load("data/players/" + id + ".json"), load("data/method.json").catch(function () { return null; })]).then(function (pm) {
+      var p = pm[0], prof = pm[1] && pm[1].war_profile;
       chrome("player", p.run_date, p.data_through);
       document.title = p.name + " | MiLB Hitter Value";
       var w = h("div", { class: "wrap" }); main.appendChild(w);
@@ -305,6 +303,7 @@
         h("div", null, h("dt", { text: "ETA, mean" }), h("dd", { class: "num" }, p.eta ? [num(p.eta.mean, 1), h("small", { text: " yrs" })] : "in MLB"))));
       s2.appendChild(h("h3", { text: "Six-year WAR if he reaches MLB" }));
       s2.appendChild(rangeStrip({ q10: p.war.q10, q50: p.war.q50, q90: p.war.q90, mean: p.war.mean, label: "6-year WAR if he reaches MLB: 10th " + num(p.war.q10) + ", median " + num(p.war.q50) + ", 90th " + num(p.war.q90), fmt: function (v) { return num(v, 1); } }));
+      var wy = prof && warByYear(p, prof); if (wy) s2.appendChild(wy);
       s2.appendChild(h("h3", { text: "Debut year" }));
       if (p.eta) {
         var items = Object.keys(p.eta.debut).sort().map(function (y) { return { k: y, v: p.eta.debut[y] }; });
@@ -410,6 +409,22 @@
       w.appendChild(P("The clear next step is blending in scouting grades, which goes straight at the model's biggest weakness, along with minor league defensive metrics and pitch-level swing decision data where it exists. Armed with that information, I would expect the gap to Pipeline on high-ceiling players to narrow considerably."));
       w.appendChild(h("p", { style: "margin-top:20px" }, "Jack Huffard. Model run " + M.run_date + "."));
     }).catch(function (e) { chrome("method"); fail(e.message); });
+  }
+
+  /* six-year WAR quantiles spread across control years by the average profile of real careers */
+  function warByYear(p, prof) {
+    var dy = p.in_mlb ? +p.in_mlb.debut.slice(0, 4) : +Object.keys(p.eta.debut).reduce(function (a, y) { return p.eta.debut[y] > p.eta.debut[a] ? y : a; });
+    var first = p.in_mlb ? 7 - p.in_mlb.control_years_left : 1;
+    var ks = ["q10", "q50", "mean", "q90"], tot = [0, 0, 0, 0];
+    var rows = prof.filter(function (x) { return x.control_year >= first; }).map(function (x) {
+      var yr = dy + x.control_year - 1;
+      return [String(yr), String(Math.floor(p.age + yr - p.season))].concat(ks.map(function (k, i) { var v = x.share * p.war[k]; tot[i] += v; return num(Math.round(v * 10) / 10 || 0, 1); }));
+    });
+    if (!rows.length) return null;
+    rows.push([{ v: h("b", { text: "Total" }) }, ""].concat(tot.map(function (v) { return { v: h("b", { text: num(Math.round(v * 10) / 10 || 0, 1) }) }; })));
+    return h("div", null, h("h3", { text: "Projected WAR by season" }),
+      table(["Season", { t: "Age", n: 1 }, { t: "10th", n: 1, title: "10th percentile" }, { t: "Median", n: 1 }, { t: "Mean", n: 1 }, { t: "90th", n: 1, title: "90th percentile" }], rows, { label: "Projected WAR by season" }),
+      h("p", { class: "legend", text: (p.in_mlb ? "Remaining control years only. " : "Assumes his most likely debut year, " + dy + ". ") + "Each column is a six-year outcome (10th percentile, median, mean, 90th percentile) spread across seasons using the average WAR profile of 2005 to 2017 debuts, not a separate projection for each season." }));
   }
 
   var page = document.body.getAttribute("data-page");
