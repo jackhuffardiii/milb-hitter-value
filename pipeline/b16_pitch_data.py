@@ -231,6 +231,8 @@ def main():
     repo = repo_stints()
     compare_2024(repo)
     stints = pd.concat([repo] + [api_stints(y) for y in API_MILB_YEARS], ignore_index=True)
+    stints[["player_id", "season", "level", "league_id", "team_id", "source", "BF"]].to_parquet(
+        DATA / "milb_pitch_stints.parquet", index=False)  # pre-aggregation frame for B3 park weights (B18)
     milb = aggregate_stints(stints)
     hist = history()
     mlb = mlb_pitching()

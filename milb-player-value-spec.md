@@ -75,7 +75,7 @@ Status: draft 2026-10-09. Decided via grill-me interview, 2026-10-09. Pre-regist
 - **Q19** gmLI column in `war_daily_pitch`: resolved in B17. The column is `GR_leverage_index_avg` (average leverage on entering in relief; 1.0 for pure starters), present on 100% of 2005 to 2026 rows. Weighted by relief outs across stints. B17 also borrows `IPouts_start` / `IPouts_relief` for the SP/RP outs split (GS / G where bWAR has no row).
 - **Q20** SP/RP replacement gap fixed at the FanGraphs convention (about .380 vs .470 win%); only the overall level is solved per season.
 - **Q21** mERA target rows need 100+ BF in the next season; pairs weighted by BF.
-- **Q22** Bayesian library for mERA (e.g. PyMC, a new pinned dependency) vs an empirical-Bayes approximation in existing dependencies. Decided in B19 before any fit; varying slopes require a real hierarchical fit.
+- **Q22** Bayesian library for mERA: PyMC, a new pinned dependency (Jack's call, 2026-10-09). Varying slopes need a real hierarchical fit.
 - **Q23** The two-way sum overstates players whose careers resolve to one path. Stated on the card and methodology page.
 - **Q24** Restating hitters changes every published hitter value, including figures already cited externally. Hold citations until v2 publishes.
 - **Q25** Matched-pair translation pairs for pitchers use the same BF thresholds scaled from v1's PA thresholds (300 PA -> 300 BF).
