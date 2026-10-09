@@ -189,7 +189,7 @@ def main():
         "sources": {int(y): {"source": g.source.iloc[0], "url": g.source_url.iloc[0]}
                     for y, g in top.groupby("list_year")},
         "note": "BA lists are paywalled; all years use MLB Pipeline preseason Top 100 (source='pipeline') per Q6.",
-        "holdout_looks": "2013-17: 5th look (v1.1, Q18; A12 was chosen after a holdout result). 2018-19: first look (C12).",
+        "holdout_looks": "2013-17: 6th look, 2018-19: 2nd look (v2 B15 restatement after the S17 re-anchor, C21; no hitter modeling change).",
         "C2": {"primary_excl_censored": c2(prim), "sensitivity_incl_censored": c2(sens),
                "player_disjoint": c2(prim[prim.disjoint]) if prim.disjoint.sum() > 10 else None,
                "ranked_matched_rows": int(len(r)), "rows_censored_or_pre2005": ncens,

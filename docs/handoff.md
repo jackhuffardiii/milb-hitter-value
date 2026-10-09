@@ -421,3 +421,14 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 
 ### Spec deviations
 - C10 and C11 (prior) fail as reported above; C4 still fails. No deviation from the R0 decisions except: the spread model also uses the WAR prediction as an input (needed for C11; decided on CV before the R9 look).
+
+## v2
+
+### B15 re-anchor (b2; S17, C13, C21), 2026-10-09
+- v1.1 outputs frozen first in `data/v1_1_baseline/` (backtest.json, valuations.parquet, mlb_war.parquet; local, gitignored).
+- `repl_runs` = `repl_per_pa` x PA, with `repl_per_pa` solved per season so non-pitcher WAR sums to 590 x games / 2430. Games = Stats API team gamesPlayed / 2 (2,428 to 2,431; 2020 is 898, so its target is 218.0). Player PA equals team PA every season, so solving over our rows does not inflate anyone. New column `repl_per_pa` in mlb_war.parquet; linear_weights.parquet adds `games`.
+- Replacement now 18.5 (2014-15) to 22.3 (2020) runs per 600 PA (v1: fixed 20); 2022-26 sit at 20.7 to 21.5.
+- C13 (hitters) passes: max |sum - target| = 0.003 WAR. C1 unchanged in substance: r vs bWAR .960.
+- Pre-registered directions: 2021-26 WAR rose (+4 to +8%; 2021 -0.2%), 2014-15 fell 7.6% / 7.5% (yes); training-era (2005-18) WAR -4.3% (expected about 4%, yes); 2026 final-board Spearman with v1.1 EV .9995 (>= .98, yes), war_mean .9996. Mean 2026 EV $4.34M -> $4.23M.
+- C21 restatement (2013-17 look #6, 2018-19 look #2; no modeling change): C3 logloss .371 vs .447 (unchanged), EV Spearman .105 vs .088 (was .106 vs .087); C2 pooled model .238 vs Pipeline .369, diff -.131 (was -.127); C12 P(MLB) logloss .391 / AUC .866 (unchanged), EV vs WAR thru 2026: 2018 .080 vs .091 (was .074 vs .078), 2019 .091 vs .092 (was .085 vs .083); lists 2019-20 diff +.191 (was +.187). P(MLB) metrics are identical because only the WAR target moved. No conclusion changed; the 2018 EV-vs-baseline tie now leans to the baseline by .011.
+- Tests: 106 passed, 2 xfailed (new `test_c13_position_player_war_anchor`).
