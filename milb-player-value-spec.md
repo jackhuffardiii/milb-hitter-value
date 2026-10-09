@@ -36,6 +36,7 @@ Status: draft 2026-10-09. Decided via grill-me interview, 2026-10-09. Pre-regist
 - **X12** Recency sample weights. Drift is handled by A19.
 - **X13** pybaseball. It adds nothing v2 lacks (no MiLB support; `bwar_pitch` wraps the same Baseball-Reference download v1 already does for `war_daily_bat`).
 - **X14** Renaming the Netlify site. Stays at milb-hitter-value.netlify.app so existing links work.
+- **X15** Major leaguers and a trade simulator. V3, after v2 ships: it needs v2's shared 590/410 scale and pitcher values, since prospects are the currency in most MLB trades. Split into V3a (MLB player value: projections, aging, contracts, arb, service time, reversing X6) and V3b (trade simulator: MLB trade rules, contender win curve, port of the NBA Tradeability Index `shop.py`/`cba.py` browser pattern). Contract and service-time data is the feasibility gate; check it before a V3 spec. Reuse: `~/Projects/mlb-trade-web/public/data/trades.json` already has every MLB trade since 2015 (2,393 trades, per-asset `fromTeamId`/`toTeamId`, cash/PTBNL rows, MLBAM `personId` keys matching this pipeline, refreshed daily by GitHub Actions), which can serve as the real-trade replay test set (NBA `validate_picks.py` method), scored on trades after the V3 declaration date. It has no contract or service-time data.
 
 ## Approach
 
