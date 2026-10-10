@@ -37,3 +37,17 @@ CONTACT_MIN_AAA_BIP = 100  # B22 swaps reg_XB only for seasons with this many AA
 # ---- Two-way players (S29). rerun: --from b24.
 TWO_WAY_MIN_PA = 150
 TWO_WAY_MIN_BF = 150
+
+# ==== v3: MLB players and the trade simulator (DRAFT defaults, each [review] in docs/v3-spec.md) ====
+# ---- Projection (S33, C23). rerun: --from b29.
+PROJ_FIRST, PROJ_YEARS = 2027, 6  # project 2027-2032
+MARCEL_WEIGHTS = (5, 4, 3)  # last three seasons, most recent first
+REGRESS_PA = 1200  # hitters: Marcel-style regression toward the league WAR rate, in PA
+REGRESS_OUTS = 450  # pitchers: same, in outs (150 IP)
+PT_HIT = (0.5, 0.1, 200)  # projected PA = .5 x PA(s) + .1 x PA(s-1) + 200 (Marcel)
+PT_PITCH = (0.5, 0.1, 75, 180)  # projected outs = .5 x outs(s) + .1 x outs(s-1) + 75 (relievers) or 180 (starters, GS share > .5)
+# ---- Arbitration salaries (S35, C24). rerun: --from b30.
+ARB_HOLDOUT_FIRST = 2021  # arb model is chosen on 2011-2020 grouped CV; 2021-2026 is its one holdout look
+# ---- MLB surplus and trades (S36, S39). rerun: --from b31.
+ROSTER_MAX = 40  # 40-man limit checked on each side of a trade
+CBT_THRESHOLD_2027 = 244e6  # competitive balance tax threshold assumed for 2027 (2026: $244M; CBA expires Dec 2026)

@@ -31,9 +31,9 @@ def page(team):
         r = requests.get("https://www.baseball-reference.com/teams/" + DIRECT.get(team, f"{team}/2026-payroll-salaries.shtml"), headers={"User-Agent": UA}, timeout=120)
         r.raise_for_status()
         CACHE.mkdir(parents=True, exist_ok=True)
-        f.write_text(r.text)
+        f.write_bytes(r.content)  # raw bytes: requests guesses Latin-1 for these pages and garbles accented names
         time.sleep(4)  # Baseball-Reference allows about 20 requests a minute
-    return f.read_text()
+    return f.read_text(encoding="utf-8")
 
 
 def money(x):

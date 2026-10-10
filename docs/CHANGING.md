@@ -25,6 +25,11 @@ b19 (mERA, about 40 minutes of PyMC) is skipped automatically when its inputs an
 | Tracked contact: xwOBA-only vs blend | `config.CONTACT_XWOBA_ONLY`, `CONTACT_MIN_AAA_BIP` | `--from b21` | test_b21, test_b22 |
 | Two-way thresholds | `config.TWO_WAY_MIN_PA`, `TWO_WAY_MIN_BF` | `--from b24` | test_b24 |
 | $/WAR, inflation, minimum, arbitration shares, discount | `data/manual/dollar_params.csv` | `--from b8` | test_b8, test_b24 |
+| v3 projection: Marcel weights, regression, playing time | `config.MARCEL_WEIGHTS`, `REGRESS_PA`, `REGRESS_OUTS`, `PT_HIT`, `PT_PITCH` | `--from b29` | test_b29 (C23 in data/b29_c23.json), test_b31 |
+| v3 projection horizon | `config.PROJ_FIRST`, `PROJ_YEARS` | `--from b29` | test_b29, test_b31 |
+| v3 arbitration model holdout split | `config.ARB_HOLDOUT_FIRST` | `--from b30` (re-opens its holdout) | test_b30 |
+| v3 trade rules: 40-man limit, tax line | `config.ROSTER_MAX`, `CBT_THRESHOLD_2027` | `--from b32` | test_b31 |
+| v3 option/arb/pre-arb year rules | `contract_years()` in `pipeline/b31_mlb_value.py` | `--from b31` | test_b31 |
 | Add a feature to the pitcher model | `PITCH_NUM` in `pipeline/b20_pitch_features.py` (`pitch_X`) | `--from b20`; gate it like C15 (`b20.evaluate`) | test_b20, test_b22 |
 | Add a feature to the hitter model | `S15_KEPT` / `stat_X` in b5/b6 (gate with b12) | `--from b5` | test_b5, test_b12 |
 

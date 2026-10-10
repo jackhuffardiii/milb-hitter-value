@@ -1,4 +1,8 @@
-# MiLB Player Value v3: MLB players and a trade simulator (DRAFT, not approved)
+# MiLB Player Value v3: MLB players and a trade simulator (DRAFT defaults, BUILT 2026-10-10)
+
+**Status:** Jack asked (2026-10-10, overnight) for v3 to be built, so every [review] default below was implemented as written
+and is one line in `pipeline/config.py` or one function to swap. B27-B32 are built; results in docs/handoff.md ("v3 build").
+Q26-Q29 are still open: changing an answer is a config or function change plus `run.py --from b29`.
 
 Drafted 2026-10-10 by Claude while Jack was away, from the V3 plan in X15 and project memory. Every decision below is a
 default, tagged **[review]** where Jack has not decided it. No v3 code is written against this until Jack approves it

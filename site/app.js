@@ -65,6 +65,7 @@
       h("span", { class: "muted", text: "Surplus dollars for every A to AAA hitter and pitcher" }),
       h("nav", { "aria-label": "Main" },
         h("a", { href: "index.html", "aria-current": page === "index" ? "page" : null, text: "Leaderboard" }),
+        h("a", { href: "trade.html", "aria-current": page === "trade" ? "page" : null, text: "Trade simulator" }),
         h("a", { href: "method.html", "aria-current": page === "method" ? "page" : null, text: "Methodology" }))));
     document.body.insertBefore(head, document.body.firstChild);
     document.body.insertBefore(h("a", { class: "skip", href: "#main", text: "Skip to content" }), document.body.firstChild);
@@ -496,6 +497,17 @@
         w.appendChild(P("On the combined 2026 board, pitchers rank low: " + (bd.top50_roles.P || 0) + " of the top 50 and " + (bd.top100_roles.P || 0) + " of the top 100. Debuting pitchers and hitters produce similar six-year WAR on average, but pitcher outcomes are harder to call from a stat line, so even the model's best pitchers carry less expected WAR than its best hitters. Straightening out the walk-rate drift or recalibrating the WAR model did not change that. Use the Players filter to rank pitchers against each other; the hitter/pitcher WAR split barely matters (" + bd.n.toLocaleString() + " players; top 50 unchanged at a 57/43 or 61/39 split)."));
       }
 
+      /* trades (v3 draft) */
+      var V = M.v3;
+      if (V) {
+        var c24 = V.c24.holdout, inf = V.c26.informational_2026_from_jul1 || {};
+        w.appendChild(h("h2", { id: "trades", text: "Major leaguers and trades (draft)" }));
+        w.appendChild(P("The trade simulator puts " + n(V.n_mlb) + " players on 2026 40-man rosters on the same surplus scale as the prospects. Each major leaguer's WAR is projected six seasons out: a weighted average of his last three seasons of our WAR, pulled toward league average by playing time, aged with a curve fit to our own WAR since 2006. Each season is then priced against what he will actually be paid: guaranteed salary from his contract, an arbitration estimate, or the league minimum. Options are exercised when that side benefits. Pre-arbitration and arbitration years floor at zero, because a club can non-tender a player; guaranteed money does not, because the club owes it."));
+        w.appendChild(P("The arbitration estimate is a model trained on real arbitration salaries since 2011. On salaries from 2021 on, which it never saw, its median miss is " + Math.round(c24.model.median_abs_pct_err * 100) + "%, against " + Math.round(c24.baseline.median_abs_pct_err * 100) + "% for the simple 40/60/80% of market value rule the prospect values still use."));
+        if (inf.fully_valued) w.appendChild(P("As a rough check, " + n(inf.fully_valued) + " two-team trades made after July 1, 2026 involved only players the model values. The median gap between the two sides was $" + inf.median_gap_m.toFixed(1) + "M, and " + Math.round(inf.share_within_fair * 100) + "% were within $" + V.fair + "M. That check peeks at the rest of the 2026 season, so the real test is trades made from here on, which are logged as they happen."));
+        w.appendChild(P("Values are team-neutral: a contender paying for this year's wins, or a club with no room for a reliever, is not priced in yet. Treat the simulator as a draft: the projection, arbitration and option rules are defaults awaiting review."));
+      }
+
       /* limits */
       w.appendChild(h("h2", { id: "limits", text: "What it misses" }));
       w.appendChild(h("ul", null,
@@ -508,6 +520,83 @@
       w.appendChild(P("The clear next step is blending in scouting grades, which goes straight at the model's biggest weakness, along with minor league defensive metrics and pitch-level swing decision data where it exists. Armed with that information, I would expect the gap to Pipeline on high-ceiling players to narrow considerably."));
       w.appendChild(h("p", { style: "margin-top:20px" }, "Jack Huffard. Model run " + M.run_date + "."));
     }).catch(function (e) { chrome("method"); fail(e.message); });
+  }
+
+  /* ---------- trade simulator (v3 draft) ---------- */
+  function initTrade() {
+    var main = document.getElementById("main");
+    load("data/trade.json").then(function (T) {
+      chrome("trade", T.run_date);
+      var w = h("div", { class: "wrap" }); main.appendChild(w);
+      var byTeam = {}, tName = {};
+      T.teams.forEach(function (t) { byTeam[t.code] = []; tName[t.code] = t; });
+      T.assets.forEach(function (a) { if (byTeam[a.team]) byTeam[a.team].push(a); });
+      var picked = { A: {}, B: {} }, team = { A: T.teams[0].code, B: T.teams[1].code };
+      w.appendChild(h("h1", { style: "margin-top:24px", text: "Trade simulator" }));
+      w.appendChild(h("p", { class: "lede" }, "Pick two clubs and the players each sends. Every asset is in surplus dollars on one scale: prospects from the expected surplus on the leaderboard, major leaguers from projected WAR minus what their contract or arbitration will pay them. Values are team-neutral: a contender's need is not priced in. ",
+        h("a", { href: "method.html#trades", text: "How trades are valued." })));
+      var summary = h("section", { class: "answer", "aria-live": "polite", "aria-label": "Trade result" });
+      var cols = h("div", { class: "two" });
+      w.appendChild(summary); w.appendChild(cols);
+      var kindTag = function (a) { return a.kind === "mlb" ? "MLB" : a.on40 ? "Prospect, 40-man" : "Prospect"; };
+
+      function side(k) {
+        var box = h("div");
+        var sel = h("select", { id: "team-" + k }, T.teams.map(function (t) { return h("option", { value: t.code, text: t.name, selected: t.code === team[k] ? true : null }); }));
+        var q = h("input", { type: "search", placeholder: "Filter players", autocomplete: "off", "aria-label": "Filter players" });
+        var list = h("div", { class: "tbl-wrap", role: "region", tabindex: "0", "aria-label": "Players" });
+        function draw() {
+          var t = q.value.trim().toLowerCase();
+          var rows = byTeam[team[k]].filter(function (a) { return !t || a.name.toLowerCase().indexOf(t) >= 0; }).slice(0, t ? 80 : 60);
+          list.textContent = "";
+          list.appendChild(h("table", null, h("caption", { text: "Sends: tick players. Sorted by value; the top 60 shown, filter to find others." }),
+            h("thead", null, h("tr", null, ["", "Player", "Type", "Age", "Value", "2027 salary"].map(function (x, i) { return h("th", { scope: "col", class: i >= 3 ? "n" : null, text: x }); }))),
+            h("tbody", null, rows.map(function (a) {
+              var cb = h("input", { type: "checkbox", "aria-label": "Trade " + a.name, checked: picked[k][a.id] ? true : null });
+              cb.addEventListener("change", function () { if (cb.checked) picked[k][a.id] = a; else delete picked[k][a.id]; result(); });
+              return h("tr", null, h("td", null, cb),
+                h("td", null, a.kind === "mlb" ? a.name : h("a", { href: "player.html?id=" + a.id, text: a.name })),
+                h("td", { text: kindTag(a) + (a.pos ? ", " + (a.kind === "mlb" ? a.pos.replace("two_way", "two-way") : a.pos) : "") }),
+                h("td", { class: "n", text: num(a.age, 0) }), h("td", { class: "n" + (a.v < 0 ? " neg" : ""), text: usd(a.v) }),
+                h("td", { class: "n", text: a.sal == null ? "n/a" : usd(a.sal, 2) }));
+            }))));
+        }
+        sel.addEventListener("change", function () { team[k] = sel.value; picked[k] = {}; draw(); result(); });
+        q.addEventListener("input", draw);
+        box.appendChild(h("h2", { text: k === "A" ? "Club A sends" : "Club B sends" }));
+        box.appendChild(h("div", { class: "controls" }, h("label", { for: "team-" + k }, "Club", sel), q));
+        box.appendChild(list);
+        draw();
+        return box;
+      }
+
+      function result() {
+        var v = function (o) { return Object.keys(o).reduce(function (s, id) { return s + o[id].v; }, 0); };
+        var sal = function (o) { return Object.keys(o).reduce(function (s, id) { return s + (o[id].on40 && o[id].sal ? o[id].sal : 0); }, 0); };
+        var n40 = function (o) { return Object.keys(o).filter(function (id) { return o[id].on40; }).length; };
+        var sA = v(picked.A), sB = v(picked.B), gainA = sB - sA;
+        summary.textContent = "";
+        summary.appendChild(h("h2", { style: "margin:0 0 8px;font-size:15px;font-family:var(--sans);font-weight:600", text: "Result" }));
+        if (!Object.keys(picked.A).length && !Object.keys(picked.B).length) { summary.appendChild(h("p", { class: "muted", text: "Tick players on either side to build a trade." })); return; }
+        var lines = [["A", sB, sA, gainA], ["B", sA, sB, -gainA]].map(function (x) {
+          var t = tName[team[x[0]]], roster = t.n40 - n40(picked[x[0]]) + n40(picked[x[0] === "A" ? "B" : "A"]);
+          var pay = t.payroll - sal(picked[x[0]]) + sal(picked[x[0] === "A" ? "B" : "A"]);
+          return h("div", null, h("h3", { text: t.name }),
+            h("dl", { class: "kv" },
+              h("div", null, h("dt", { text: "Gets" }), h("dd", { class: "num", text: usd(x[1]) })),
+              h("div", null, h("dt", { text: "Gives" }), h("dd", { class: "num", text: usd(x[2]) })),
+              h("div", null, h("dt", { text: "Net" }), h("dd", { class: "num" + (x[3] < 0 ? " neg" : ""), text: (x[3] > 0 ? "+" : "") + usd(x[3]) })),
+              h("div", null, h("dt", { text: "40-man after" }), h("dd", { class: "num" + (roster > T.roster_max ? " neg" : ""), text: roster + " / " + T.roster_max })),
+              h("div", null, h("dt", { text: "2027 payroll after" }), h("dd", { class: "num" + (pay > T.cbt ? " neg" : ""), text: usd(pay, 0) + (pay > T.cbt ? " (over the tax line)" : "") }))));
+        });
+        summary.appendChild(h("div", { class: "two" }, lines));
+        var verdict = Math.abs(gainA) <= T.fair ? "Close to even: the gap is within $" + T.fair + "M, inside the model's error." :
+          (gainA > 0 ? tName[team.A].name : tName[team.B].name) + " comes out ahead by " + usd(Math.abs(gainA)) + ".";
+        summary.appendChild(h("p", { class: "explain" }, h("b", { text: verdict }), " Payroll is projected 2027 salary for 40-man players (guaranteed, arbitration estimate, or the minimum), compared with a $" + T.cbt + "M luxury-tax threshold."));
+      }
+      cols.appendChild(side("A")); cols.appendChild(side("B"));
+      result();
+    }).catch(function (e) { chrome("trade"); fail(e.message); });
   }
 
   /* six-year WAR quantiles spread across control years by the average profile of real careers */
@@ -527,5 +616,5 @@
   }
 
   var page = document.body.getAttribute("data-page");
-  if (page === "index") initIndex(); else if (page === "player") initPlayer(); else if (page === "method") initMethod();
+  if (page === "index") initIndex(); else if (page === "player") initPlayer(); else if (page === "method") initMethod(); else if (page === "trade") initTrade();
 })();
