@@ -4,8 +4,8 @@ import importlib
 import sys
 import time
 
-ORDER = ["b1", "b3", "b2", "b16", "b17", "b18", "b19", "b20", "b21", "b4", "b5", "b12", "b6", "b11", "b7", "b8", "b9", "b10"]
-MODULES = {"b1": "pipeline.b1_data", "b3": "pipeline.b3_park", "b2": "pipeline.b2_war", "b16": "pipeline.b16_pitch_data", "b17": "pipeline.b17_pitch_war", "b18": "pipeline.b18_pitch_mle", "b19": "pipeline.b19_mera", "b20": "pipeline.b20_pitch_features", "b21": "pipeline.b21_pitch_tracking", "b4": "pipeline.b4_mle", "b5": "pipeline.b5_features", "b12": "pipeline.b12_select",
+ORDER = ["b1", "b3", "b2", "b16", "b17", "b18", "b19", "b20", "b21", "b22", "b4", "b5", "b12", "b6", "b11", "b7", "b8", "b9", "b10"]
+MODULES = {"b1": "pipeline.b1_data", "b3": "pipeline.b3_park", "b2": "pipeline.b2_war", "b16": "pipeline.b16_pitch_data", "b17": "pipeline.b17_pitch_war", "b18": "pipeline.b18_pitch_mle", "b19": "pipeline.b19_mera", "b20": "pipeline.b20_pitch_features", "b21": "pipeline.b21_pitch_tracking", "b22": "pipeline.b22_pitch_models", "b4": "pipeline.b4_mle", "b5": "pipeline.b5_features", "b12": "pipeline.b12_select",
            "b6": "pipeline.b6_models", "b11": "pipeline.b11_batted","b7": "pipeline.b7_backtest", "b8": "pipeline.b8_value", "b9": "pipeline.b9_site"}  # add each step's module here when implemented
 
 if __name__ == "__main__":
