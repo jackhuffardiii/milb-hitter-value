@@ -476,3 +476,12 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Ladder note (S22, display): it shows the *next-season* projection at each level, so a median A-ball pitcher's own-level mERA (4.04) sits below his league's current RA9: development, regression, and selection (100+ BF next season) are in it. The card copy must say "projected".
 - Runtime: b19 takes 41 min (20 CV fits + 2 final). A full `run.py` now takes about 45 min.
 - Tests: 152 passed, 3 xfailed (tests/test_b19.py, 6 tests).
+
+### B20 pitcher features, P(SP), C15 gate (b20_pitch_features; S23, S24, S25, S26, C15), 2026-10-10
+- data/pitch_features.parquet: one row per pitcher x season 2005-26 (affiliated, not Mexican League; bio P/TWP or >= 150 BF in s; career MLB outs through s < 150). Rows: train_era 21,467 stat / 26,011 prior; censored 13,421 / 14,362; score (2026) 2,074 / 1,804. Train-era stat P(reached MLB) by highest level: A .22, A+ .23, AA .36, AAA .63.
+- b5's inline draft block moved to `draft_features(snap, hs=False)`; hitter features.parquet `.equals` before/after `run.py b5` (verified). hs_draftee (B20 only) uses school_class, falling back to "HS"/"High School" in the school text for pre-2005 records.
+- P(SP) (S24, display only, b20_psp.json): n = 1,413 debutants 2016-25, base rate .253 starters; GroupKFold(5) OOF log loss .390 vs .565 base-rate, AUC .854.
+- C15 (b20_c15.json, n = 10,766 stat rows, s <= 2012, not debuted): baseline LL .4491 / EV Spearman .1094; + mera_cv LL .4466 (+.0025) / Spearman .1074 (-.0020); + mera_cv_blend +.0007 / -.0011. **Both fail C15 as written** (improve one, worsen neither; Jack chose the strict reading over b12's tolerances, under which mera_cv would pass). mERA is display only; B22 uses `pitch_X(df)` with no extra. The gain was also inflated by mild leakage (mera_cv fit on the same <= 2012 targets).
+- Review fix: the implementer's b20_c15.json was stale (named mera_cv_blend as kept); the rerun corrected it before the strict rule was applied.
+- Flag for B22: raw train-era stat reach rates run slightly ABOVE hitters' at every level (A .218 vs .206, A+ .226 vs .209, AA .357 vs .321, AAA .627 vs .604); the pre-registration expected lower. Check age-matched before reading anything into it.
+- Tests: 160 passed, 3 xfailed (tests/test_b20.py, 8 tests). Implementer's report: docs/b20-implementer-report.md.
