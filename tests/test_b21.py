@@ -37,7 +37,7 @@ def test_movement_inches():
 def test_c17_json():
     c = json.loads((DATA / "b21_c17.json").read_text())
     assert c["n"] > 0 and isinstance(c["pass"], bool)
-    assert all(c[k] > 0 for k in ("rmse_observed", "rmse_blended", "rmse_shrunk_control"))
+    assert all(c[k] > 0 for k in ("rmse_observed", "rmse_blended", "rmse_shrunk_control", "rmse_xwoba_only"))
 
 
 def test_hitter_cache_unchanged(monkeypatch):

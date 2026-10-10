@@ -5,7 +5,7 @@ Arsenal (D17, S27) is display only, never a model feature -> data/pitch_arsenal.
 Contact adjustment (S28): xwOBA on contact allowed (xwOBAcon) blended into the AAA XB/BIP contact term -> data/pitch_contact.parquet.
 C17 asks whether the blend predicts next-season AAA ISO on contact better than observed XB alone, with a no-tracking shrinkage
 control (C) so a gain from shrinking toward the league mean is not credited to tracking -> data/b21_c17.json.
-xb_contact_adj is not wired into B18/B20/B22; that decision follows the C17 result.
+xb_contact_adj = f(xwOBAcon) on the XB/BIP scale (xwOBA only when tracked, Jack's call after C17); B22 rescales reg_XB with it.
 """
 import json
 import time
@@ -110,16 +110,18 @@ def c17(contact):
     nxt = a.assign(season=a.season - 1)[["player_id", "season", "iso_con", "iso_d"]].rename(columns={"iso_con": "target", "iso_d": "target_w"})
     d = a.merge(nxt, on=["player_id", "season"]).merge(contact[["player_id", "season", "xwoba"]], on=["player_id", "season"])
     d = d[d.season.isin([2023, 2024])].reset_index(drop=True)
-    oof = {k: np.full(len(d), np.nan) for k in "ABC"}
+    oof = {k: np.full(len(d), np.nan) for k in "ABCD"}
     for tr, te in GroupKFold(5).split(d, groups=d.player_id):
         t, v = d.iloc[tr], d.iloc[te]
         cal = wfit(t.XB, t.target, t.target_w)  # A: observed XB alone
         oof["A"][te] = cal[0] + cal[1] * v.XB
         for kind in "BC":
             oof[kind][te] = predict(v, kind, *fit_blend(t, kind))
-    r = {k: wrmse(d.target, oof[k], d.target_w) for k in "ABC"}
+        cal = wfit(t.xwoba, t.target, t.target_w)  # D: xwOBAcon alone (no box-score XB)
+        oof["D"][te] = cal[0] + cal[1] * v.xwoba
+    r = {k: wrmse(d.target, oof[k], d.target_w) for k in "ABCD"}
     k, f, cal, mean = fit_blend(d, "B")
-    out = dict(n=len(d), n_players=int(d.player_id.nunique()), rmse_observed=r["A"], rmse_blended=r["B"], rmse_shrunk_control=r["C"],
+    out = dict(n=len(d), n_players=int(d.player_id.nunique()), rmse_observed=r["A"], rmse_blended=r["B"], rmse_shrunk_control=r["C"], rmse_xwoba_only=r["D"],
                k_blend=k, f_intercept=f[0], f_slope=f[1], k_control=fit_blend(d, "C")[0],
                **{"pass": bool(r["B"] < r["A"])}, blend_beats_control=bool(r["B"] < r["C"]))
     return out, (k, f)
@@ -133,7 +135,8 @@ def main():
     res, (k, f) = c17(contact)
     a = aaa_contact()
     contact = contact.merge(a[["player_id", "season", "XB", "BIP"]], on=["player_id", "season"], how="left")
-    contact["xb_contact_adj"] = blend(contact.XB.fillna(0), contact.BIP.fillna(0), contact.xwoba, f, k)  # no AAA BIP -> pure f(xwOBAcon)
+    # Jack, 2026-10-10: with tracking, use xwOBAcon alone (D ties the blend B on C17; box-score XB adds nothing once xwOBAcon is known)
+    contact["xb_contact_adj"] = f[0] + f[1] * contact.xwoba
     contact[["player_id", "season", "xwoba", "bip", "xb_contact_adj"]].to_parquet(DATA / "pitch_contact.parquet", index=False)
     (DATA / "b21_c17.json").write_text(json.dumps(res, indent=1))
     print(json.dumps(res, indent=1))
