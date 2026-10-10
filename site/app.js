@@ -1,4 +1,4 @@
-/* MiLB Hitter Value: vanilla JS, no dependencies. Pages: index, player, method (body[data-page]). */
+/* MiLB Player Value: vanilla JS, no dependencies. Pages: index, player, method (body[data-page]). */
 (function () {
   "use strict";
   var NS = "http://www.w3.org/2000/svg";
@@ -61,8 +61,8 @@
 
   function chrome(page, runDate, through) {
     var head = h("header", { class: "site-head" }, h("div", { class: "wrap" },
-      h("a", { class: "brand", href: "index.html", text: "MiLB Hitter Value" }),
-      h("span", { class: "muted", text: "Surplus dollars for every A to AAA hitter" }),
+      h("a", { class: "brand", href: "index.html", text: "MiLB Player Value" }),
+      h("span", { class: "muted", text: "Surplus dollars for every A to AAA hitter and pitcher" }),
       h("nav", { "aria-label": "Main" },
         h("a", { href: "index.html", "aria-current": page === "index" ? "page" : null, text: "Leaderboard" }),
         h("a", { href: "method.html", "aria-current": page === "method" ? "page" : null, text: "Methodology" }))));
@@ -73,9 +73,9 @@
       h("p", null, "Stats-only model by Jack Huffard; not affiliated with MLB. Run date: ", h("span", { class: "num", text: runDate || "unknown" }), through ? "; data through " : "", through ? h("span", { class: "num", text: through }) : "", "."),
       h("p", null, "Data sources:"),
       h("ul", null,
-        h("li", null, L("https://github.com/armstjc/milb-data-repository", "armstjc/milb-data-repository"), " (MiLB season batting 2005 to 2024)"),
+        h("li", null, L("https://github.com/armstjc/milb-data-repository", "armstjc/milb-data-repository"), " (MiLB season batting and pitching 2005 to 2024)"),
         h("li", null, L("https://statsapi.mlb.com", "MLB Stats API"), " (2025 to 2026 MiLB, MLB seasons, bios, draft, park splits)"),
-        h("li", null, L("https://baseballsavant.mlb.com/statcast_search/minors", "Baseball Savant minors Statcast"), " (batted-ball context)"),
+        h("li", null, L("https://baseballsavant.mlb.com/statcast_search/minors", "Baseball Savant minors Statcast"), " (batted-ball context, pitch tracking)"),
         h("li", null, L("https://www.baseball-reference.com/data/", "Baseball-Reference bWAR"), " (validation only)"),
         h("li", null, L("https://www.mlb.com/prospects", "MLB Pipeline preseason Top 100 lists"), " (backtest benchmark)"),
         h("li", null, L("https://blogs.fangraphs.com/what-are-teams-paying-for-a-win-in-free-agency-2026-edition/", "FanGraphs $/WAR"), " (dollar model)")))));
@@ -151,6 +151,7 @@
       var q = h("input", { type: "search", id: "q", placeholder: "Search by name", autocomplete: "off" });
       var ctrl = h("div", { class: "controls", role: "search" },
         h("label", { for: "q" }, "Name", q),
+        sel("f-role", "Players", ["H", "P"], function (x) { return x === "H" ? "Hitters" : "Pitchers"; }),
         sel("f-level", "Level", order.filter(function (x) { return uniq("level").indexOf(x) >= 0; }), LV),
         sel("f-pos", "Position", uniq("pos")),
         sel("f-org", "Organization", uniq("org")),
@@ -159,7 +160,7 @@
       var count = h("p", { class: "count", "aria-live": "polite" });
       var cols = [
         ["rank", "#", 1], ["name", "Player", 0], ["org", "Organization", 0], ["level", "Level", 0], ["age", "Age", 1], ["pos", "Pos", 0],
-        ["mlb_pos", "Proj. MLB pos", 0], ["p_mlb", "P(MLB)", 1], ["war", "WAR (6 yr)", 1], ["eta", "ETA (yrs)", 1], ["ev", "Expected surplus", 1], ["q10", "10th (if MLB)", 1], ["q90", "90th (if MLB)", 1]
+        ["mlb_pos", "Proj. MLB role", 0], ["p_mlb", "P(MLB)", 1], ["war", "WAR (6 yr)", 1], ["eta", "ETA (yrs)", 1], ["ev", "Expected surplus", 1], ["q10", "10th (if MLB)", 1], ["q90", "90th (if MLB)", 1]
       ];
       var thead = h("tr", null), tbody = h("tbody");
       var ths = {};
@@ -173,17 +174,17 @@
       });
       var more = h("div", { class: "more" });
       var tbl = h("div", { class: "tbl-wrap", role: "region", tabindex: "0", "aria-label": "Leaderboard table" },
-        h("table", null, h("caption", { text: "2026 hitters, A through AAA, including rookie-eligible players who already debuted. Expected surplus is P(MLB) times the surplus if he reaches MLB, in millions of dollars." }), h("thead", null, thead), tbody));
+        h("table", null, h("caption", { text: "2026 hitters and pitchers, A through AAA, including rookie-eligible players who already debuted. Expected surplus is P(MLB) times the surplus if he reaches MLB, in millions of dollars. Pos is RHP or LHP for pitchers; their projected role is SP or RP." }), h("thead", null, thead), tbody));
       main.appendChild(h("div", { class: "wrap" },
         h("h1", { style: "margin-top:24px", text: "2026 leaderboard" }),
-        h("p", { class: "lede" }, "Every A through AAA hitter, ranked by expected surplus dollars over six years of team control. Open a player for the full trace from minor league line to dollars. ",
+        h("p", { class: "lede" }, "Every A through AAA hitter and pitcher on one scale, ranked by expected surplus dollars over six years of team control. Use the Players filter to rank pitchers among pitchers. Open a player for the full trace from minor league line to dollars. ",
           h("a", { href: "method.html", text: "How this works, and where it fails." })),
         ctrl, count, tbl, more));
       var val = function (id) { return document.getElementById(id).value; };
       function filtered() {
-        var t = q.value.trim().toLowerCase(), lv = val("f-level"), ps = val("f-pos"), og = val("f-org"), gp = val("f-group"), hide = document.getElementById("f-conf").checked;
+        var t = q.value.trim().toLowerCase(), ro = val("f-role"), lv = val("f-level"), ps = val("f-pos"), og = val("f-org"), gp = val("f-group"), hide = document.getElementById("f-conf").checked;
         return rows.filter(function (r) {
-          return (!t || r.name.toLowerCase().indexOf(t) >= 0) && (!lv || r.level === lv) && (!ps || r.pos === ps) && (!og || r.org === og) && (!gp || r.group === gp) && (!hide || !r.low_conf);
+          return (!t || r.name.toLowerCase().indexOf(t) >= 0) && (!ro || r.role === ro || (r.role === "2W")) && (!lv || r.level === lv) && (!ps || r.pos === ps) && (!og || r.org === og) && (!gp || r.group === gp) && (!hide || !r.low_conf);
         });
       }
       function draw() {
@@ -222,6 +223,48 @@
     }).catch(function (e) { chrome("index"); fail(e.message); });
   }
 
+  /* card pieces shared by hitter and pitcher cards */
+  function driversBlock(p) {
+    var two = h("div", { class: "two" });
+    [["p_mlb", "Reach probability (log-odds)"], ["war", "Six-year WAR if he reaches (wins)"]].forEach(function (t) {
+      var L = p.drivers[t[0]], mx = Math.max.apply(null, L.map(function (x) { return Math.abs(x.c); }).concat([0.001]));
+      two.appendChild(h("div", null, h("h3", { text: t[1] }), L.length ? h("ol", { class: "drv", "aria-label": t[1] + " drivers" }, L.map(function (x) {
+        return h("li", null, h("div", { class: "fam" }, h("span", { text: x.family }), h("span", { class: "num " + (x.c < 0 ? "neg" : ""), text: (x.c > 0 ? "+" : "") + num(x.c, 2) })),
+          divBar(x.c, mx), h("div", { class: "ph", style: x.sup ? "font-style:italic" : null, text: x.phrase }));
+      })) : h("p", { class: "muted", text: "No drivers available." })));
+    });
+    return [h("h3", { text: "What drives the projection" }),
+      h("p", { class: "explain", text: "The model's inputs grouped into families. Blue pushes the projection up, orange pushes it down, sorted by size. Linear terms overlap, so read the family total, not single features. Italic phrases carry no direction: the family total also reflects trend and regressed values." }), two];
+  }
+
+  function answerBlock(p, why) {
+    var s_ = p.surplus;
+    return h("section", { class: "answer", "aria-labelledby": "h-answer" },
+      h("h2", { id: "h-answer", style: "margin:0 0 8px;font-size:15px;font-family:var(--sans);font-weight:600", text: "Expected surplus value" }),
+      h("div", { class: "big num" }, usd(s_.ev), h("small", { text: p.in_mlb ? "already in MLB; remaining control years only" : "P(MLB) " + pct(p.p_mlb, 0) + " times " + usd(s_.if_mlb) + " if he reaches MLB" })),
+      rangeStrip({ q10: s_.q10, q50: s_.q50, q90: s_.q90, mean: s_.if_mlb, label: "Surplus if he reaches MLB: 10th " + usd(s_.q10) + ", median " + usd(s_.q50) + ", 90th " + usd(s_.q90) + ", mean " + usd(s_.if_mlb), fmt: function (v) { return usd(v, 0); } }),
+      why);
+  }
+
+  function outlookBlock(p, prof) {
+    var s2 = sec("h-war", "Outlook");
+    s2.appendChild(h("dl", { class: "kv" },
+      h("div", null, h("dt", { text: "P(MLB)" }), h("dd", { class: "num", text: pct(p.p_mlb, 1) })),
+      h("div", null, h("dt", { text: "6-year WAR, mean" }), h("dd", { class: "num", text: num(p.war.mean, 1) })),
+      h("div", null, h("dt", { text: "6-year WAR, median" }), h("dd", { class: "num", text: num(p.war.q50, 1) })),
+      h("div", null, h("dt", { text: "ETA, mean" }), h("dd", { class: "num" }, p.eta ? [num(p.eta.mean, 1), h("small", { text: " yrs" })] : "in MLB"))));
+    s2.appendChild(h("h3", { text: "Six-year WAR if he reaches MLB" }));
+    s2.appendChild(rangeStrip({ q10: p.war.q10, q50: p.war.q50, q90: p.war.q90, mean: p.war.mean, label: "6-year WAR if he reaches MLB: 10th " + num(p.war.q10) + ", median " + num(p.war.q50) + ", 90th " + num(p.war.q90), fmt: function (v) { return num(v, 1); } }));
+    var wy = prof && warByYear(p, prof); if (wy) s2.appendChild(wy);
+    s2.appendChild(h("h3", { text: "Debut year" }));
+    if (p.eta) {
+      var items = Object.keys(p.eta.debut).sort().map(function (y) { return { k: y, v: p.eta.debut[y] }; });
+      s2.appendChild(barChart(items, "Probability of debut by year: " + items.map(function (i) { return i.k + " " + Math.round(i.v * 100) + "%"; }).join(", ")));
+      s2.appendChild(h("p", { class: "legend", text: "ETA 10th to 90th percentile: " + num(p.eta.q10, 0) + " to " + num(p.eta.q90, 0) + " years." }));
+    } else s2.appendChild(h("p", { class: "muted", text: "Debuted " + p.in_mlb.debut + "." }));
+    return s2;
+  }
+
   /* ---------- player card ---------- */
   function sec(id, title) {
     return h("section", { "aria-labelledby": id }, h("h2", { id: id, text: title }));
@@ -235,7 +278,8 @@
     Promise.all([load("data/players/" + id + ".json"), load("data/method.json").catch(function () { return null; })]).then(function (pm) {
       var p = pm[0], prof = pm[1] && pm[1].war_profile;
       chrome("player", p.run_date, p.data_through);
-      document.title = p.name + " | MiLB Hitter Value";
+      document.title = p.name + " | MiLB Player Value";
+      if (p.kind === "pitcher") return renderPitcher(p, pm[1] && pm[1].pitchers && pm[1].pitchers.war_profile);
       var w = h("div", { class: "wrap" }); main.appendChild(w);
       var b = p.bio;
       var ht = b.height_in ? Math.floor(b.height_in / 12) + "'" + (b.height_in % 12) + '"' : null;
@@ -255,18 +299,7 @@
         h("p", { class: "explain" }, "Dollars of value above what the team pays, over six years of control, discounted to 2026. Each year's surplus floors at zero, since a team can option, release or non-tender a player who does not produce, so a wider range of outcomes adds value. " + (p.in_mlb ? "Over his remaining control years" : "If he reaches MLB") + " the 10th to 90th percentile range is " + usd(s_.q10) + " to " + usd(s_.q90) + "; the median is " + usd(s_.q50) + "."),
         h("p", { class: "legend" }, "Range is conditional on reaching MLB. The triangle is the mean; the bar is the 10th to 90th range and the tick is the median. Outcomes are right-skewed, so the median sits below the mean. WAR is ours, with MLB fielding from Baseball-Reference; debut bars come from a hazard model and sum to P(MLB)."));
 
-      /* drivers */
-      why.appendChild(h("h3", { text: "What drives the projection" }));
-      why.appendChild(h("p", { class: "explain", text: "The model's inputs grouped into families. Blue pushes the projection up, orange pushes it down, sorted by size. Linear terms overlap, so read the family total, not single features. Italic phrases carry no direction: the family total also reflects trend and regressed values." }));
-      var two = h("div", { class: "two" });
-      [["p_mlb", "Reach probability (log-odds)"], ["war", "Six-year WAR if he reaches (wins)"]].forEach(function (t) {
-        var L = p.drivers[t[0]], mx = Math.max.apply(null, L.map(function (x) { return Math.abs(x.c); }).concat([0.001]));
-        two.appendChild(h("div", null, h("h3", { text: t[1] }), L.length ? h("ol", { class: "drv", "aria-label": t[1] + " drivers" }, L.map(function (x) {
-          return h("li", null, h("div", { class: "fam" }, h("span", { text: x.family }), h("span", { class: "num " + (x.c < 0 ? "neg" : ""), text: (x.c > 0 ? "+" : "") + num(x.c, 2) })),
-            divBar(x.c, mx), h("div", { class: "ph", style: x.sup ? "font-style:italic" : null, text: x.phrase }));
-        })) : h("p", { class: "muted", text: "No drivers available." })));
-      });
-      why.appendChild(two);
+      add(why, driversBlock(p));
 
       /* rate chain */
       why.appendChild(h("h3", { text: "From the box score to the model input" }));
@@ -288,29 +321,8 @@
       } else why.appendChild(h("p", { class: "muted", text: "No A through AAA rate chain for 2026 (Rookie-level or too few plate appearances). The projection comes from the prior." }));
       why.appendChild(h("p", { class: "legend", text: "Batted-ball data is display only. An adjustment that swaps observed ISO and BABIP for expected values from it (S14) was tested and not applied. Height enters the model; weight does not, because current listed weight leaks information from after the snapshot. Position probabilities come from the 2005 to 2017 transition matrix and feed the positional adjustment in WAR. S14 applied to this card: " + (p.s14_applied ? "yes" : "no") + "." }));
 
-      w.appendChild(h("section", { class: "answer", "aria-labelledby": "h-answer" },
-        h("h2", { id: "h-answer", style: "margin:0 0 8px;font-size:15px;font-family:var(--sans);font-weight:600", text: "Expected surplus value" }),
-        h("div", { class: "big num" }, usd(s_.ev), h("small", { text: p.in_mlb ? "already in MLB; remaining control years only" : "P(MLB) " + pct(p.p_mlb, 0) + " times " + usd(s_.if_mlb) + " if he reaches MLB" })),
-        rangeStrip({ q10: s_.q10, q50: s_.q50, q90: s_.q90, mean: s_.if_mlb, label: "Surplus if he reaches MLB: 10th " + usd(s_.q10) + ", median " + usd(s_.q50) + ", 90th " + usd(s_.q90) + ", mean " + usd(s_.if_mlb), fmt: function (v) { return usd(v, 0); } }),
-        why));
-
-      /* 2. outlook: P(MLB), WAR, debut */
-      var s2 = sec("h-war", "Outlook");
-      s2.appendChild(h("dl", { class: "kv" },
-        h("div", null, h("dt", { text: "P(MLB)" }), h("dd", { class: "num", text: pct(p.p_mlb, 1) })),
-        h("div", null, h("dt", { text: "6-year WAR, mean" }), h("dd", { class: "num", text: num(p.war.mean, 1) })),
-        h("div", null, h("dt", { text: "6-year WAR, median" }), h("dd", { class: "num", text: num(p.war.q50, 1) })),
-        h("div", null, h("dt", { text: "ETA, mean" }), h("dd", { class: "num" }, p.eta ? [num(p.eta.mean, 1), h("small", { text: " yrs" })] : "in MLB"))));
-      s2.appendChild(h("h3", { text: "Six-year WAR if he reaches MLB" }));
-      s2.appendChild(rangeStrip({ q10: p.war.q10, q50: p.war.q50, q90: p.war.q90, mean: p.war.mean, label: "6-year WAR if he reaches MLB: 10th " + num(p.war.q10) + ", median " + num(p.war.q50) + ", 90th " + num(p.war.q90), fmt: function (v) { return num(v, 1); } }));
-      var wy = prof && warByYear(p, prof); if (wy) s2.appendChild(wy);
-      s2.appendChild(h("h3", { text: "Debut year" }));
-      if (p.eta) {
-        var items = Object.keys(p.eta.debut).sort().map(function (y) { return { k: y, v: p.eta.debut[y] }; });
-        s2.appendChild(barChart(items, "Probability of debut by year: " + items.map(function (i) { return i.k + " " + Math.round(i.v * 100) + "%"; }).join(", ")));
-        s2.appendChild(h("p", { class: "legend", text: "ETA 10th to 90th percentile: " + num(p.eta.q10, 0) + " to " + num(p.eta.q90, 0) + " years." }));
-      } else s2.appendChild(h("p", { class: "muted", text: "Debuted " + p.in_mlb.debut + "." }));
-      w.appendChild(s2);
+      w.appendChild(answerBlock(p, why));
+      w.appendChild(outlookBlock(p, prof));
 
       /* 3. stats */
       var s3 = sec("h-stats", "Stats");
@@ -349,6 +361,79 @@
     }).catch(function (e) { chrome("player"); fail(e.message); });
   }
 
+  /* ---------- pitcher card ---------- */
+  var PCOMP = { K: "Strikeout rate", BB: "Walk rate (no IBB)", HR: "Home run rate", GB: "Ground-ball rate", XB: "Extra bases per ball in play" };
+  var PT = { FF: "Four-seam", SI: "Sinker", FC: "Cutter", FA: "Fastball", SL: "Slider", ST: "Sweeper", SV: "Slurve", CU: "Curveball", KC: "Knuckle curve",
+    CS: "Slow curve", CH: "Changeup", FS: "Splitter", FO: "Forkball", SC: "Screwball", KN: "Knuckleball", EP: "Eephus" };
+
+  function renderPitcher(p, prof) {
+    var main = document.getElementById("main");
+    var w = h("div", { class: "wrap" }); main.appendChild(w);
+    var b = p.bio, ro = p.role;
+    var ht = b.height_in ? Math.floor(b.height_in / 12) + "'" + (b.height_in % 12) + '"' : null;
+    w.appendChild(h("div", { class: "card-head" }, h("h1", { text: p.name }), h("span", { class: "muted" }, "Rank " + p.rank + " of " + p.n_ranked.toLocaleString() + " (hitters and pitchers)")));
+    w.appendChild(h("p", { class: "sub" }, [p.org, p.team, LV(p.level), "age " + num(p.age, 1), b.throws ? (b.throws === "L" ? "left" : "right") + "-handed pitcher" : "pitcher", ht].filter(Boolean).join(", ")));
+    if (p.low_conf) w.appendChild(h("p", { class: "note", role: "note" }, h("b", { text: "Low confidence. " }),
+      "Too few batters faced at A or above for the stat model, so the numbers come from a draft-based prior (draft round, pick, age, level, batters faced, high school or college). Treat the range as wide and the middle as soft."));
+    if (p.in_mlb) w.appendChild(h("p", { class: "note", role: "note" }, h("b", { text: "Already in MLB. " }),
+      "He debuted on " + p.in_mlb.debut + " and is still rookie-eligible, so P(MLB) is 1 and his control clock is running: " + p.in_mlb.control_years_left + " control year" + (p.in_mlb.control_years_left === 1 ? "" : "s") + " remain from 2027."));
+    if (p.il) w.appendChild(h("p", { class: "note", role: "note" }, h("b", { text: "Injured list in 2026. " }),
+      p.il.count + " placement" + (p.il.count === 1 ? "" : "s") + (p.il.max_days ? ", longest " + p.il.max_days + " days" : "") + ". Shown for context; injuries are not a model input."));
+
+    var why = h("details", { class: "why" }, h("summary", { text: "Show more: how we got this value" }),
+      h("p", { class: "explain" }, "Dollars of value above what the team pays, over six years of control, discounted to 2026. Each year's surplus floors at zero. Pitcher WAR is ours, anchored so pitchers earn 41% of all WAR, with starter and reliever replacement levels set per appearance."),
+      h("p", { class: "legend" }, "Range is conditional on reaching MLB. The triangle is the mean; the bar is the 10th to 90th range and the tick is the median."));
+    add(why, driversBlock(p));
+    why.appendChild(h("h3", { text: "From the box score to the model input" }));
+    why.appendChild(h("p", { class: "explain", text: "Each rate goes through four steps: the raw 2026 line, adjusted for the home park, translated to an MLB-equivalent (MLE) with pitchers who moved between levels, then regressed toward his league's average by sample size. Ground-ball rate is outs-based (ground outs over ground plus air outs), the only definition every source shares." }));
+    if (p.chain.length) {
+      var rows = [];
+      p.chain.forEach(function (c) {
+        ["K", "BB", "HR", "GB", "XB"].forEach(function (k, i) {
+          var f = k === "XB" ? rate : function (x) { return pct(x, 1); };
+          rows.push([{ v: i === 0 ? LV(c.level) : "", cls: "lvl" }, PCOMP[k], i === 0 ? c.BF : "", f(c[k][0]), f(c[k][1]), f(c[k][2]), f(c[k][3])]);
+        });
+      });
+      why.appendChild(table(["Level", "Rate", { t: "BF", n: 1 }, { t: "Raw", n: 1 }, { t: "Park-neutral", n: 1 }, { t: "MLE", n: 1 }, { t: "Regressed", n: 1 }], rows,
+        { label: "Rate chain by level", caption: "2026 rates by level. MLE and regressed are on the MLB scale." }));
+    } else why.appendChild(h("p", { class: "muted", text: "No A through AAA rate chain for 2026. The projection comes from the prior." }));
+    if (p.blend) why.appendChild(h("p", { class: "explain" }, "Model inputs (3:2 blend of 2026 and 2025 regressed MLEs): K " + pct(p.blend.K) + ", BB " + pct(p.blend.BB) + ", HR " + pct(p.blend.HR) + ", GB " + pct(p.blend.GB) + ", extra bases per ball in play " + rate(p.blend.XB) +
+      (p.contact && p.blend.XB_box != null && p.blend.XB !== p.blend.XB_box ? " (box score " + rate(p.blend.XB_box) + "; replaced by his tracked quality of contact, xwOBA on contact " + rate(p.contact.xwoba) + " over " + p.contact.bip + " balls in play)" : "") + "."));
+    why.appendChild(h("p", { class: "legend", text: "mERA, P(SP) and the arsenal are display only. mERA was tested as a model input and did not improve it. Weight is not an input: current listed weight leaks information from after the snapshot." }));
+    w.appendChild(answerBlock(p, why));
+    w.appendChild(outlookBlock(p, prof));
+
+    var sR = sec("h-role", "Role and run prevention");
+    sR.appendChild(h("dl", { class: "kv" },
+      h("div", null, h("dt", { text: "Projected MLB role" }), h("dd", { text: ro.proj ? (ro.proj === "SP" ? "Starter" : "Reliever") : "n/a" })),
+      h("div", null, h("dt", { text: "P(starter)" }), h("dd", { class: "num", text: ro.p_sp == null ? "n/a" : pct(ro.p_sp, 0) })),
+      h("div", null, h("dt", { text: "2026 starts share" }), h("dd", { class: "num", text: pct(ro.gs_share, 0) })),
+      h("div", null, h("dt", { text: "2026 IP per game" }), h("dd", { class: "num", text: num(ro.ip_per_g, 1) }))));
+    sR.appendChild(h("p", { class: "legend", text: "P(starter) is the chance he starts most of his games in his first two MLB seasons, from a logistic model of 2016 to 2025 debuts on role, stuff proxies (K, BB, GB), age and level." }));
+    if (p.mera) {
+      var lad = ["a", "a+", "aa", "aaa"].filter(function (k) { return p.mera.ladder[k] != null; });
+      sR.appendChild(h("h3", { text: "Projected mERA (MLB-equivalent runs per nine)" }));
+      sR.appendChild(table(["", { t: "mERA", n: 1 }], [["Next season, MLB scale", num(p.mera.mera, 2)]].concat(lad.map(function (k) { return ["Projected next season at " + LV(k), num(p.mera.ladder[k], 2)]; })),
+        { label: "mERA ladder", caption: "Projections from his translated strikeout, walk, ground-ball and contact rates. The ladder shows what he would project to allow next season at each level from his own up." }));
+    }
+    w.appendChild(sR);
+
+    var sA = sec("h-ars", "Arsenal");
+    if (p.arsenal.length) {
+      sA.appendChild(table(["Season", "Pitch", { t: "Pitches", n: 1 }, { t: "Usage", n: 1 }, { t: "Velo", n: 1 }, { t: "Spin", n: 1 }, { t: "IVB", n: 1, title: "Induced vertical break, inches" }, { t: "HB", n: 1, title: "Horizontal break, inches, arm side positive" }, { t: "Ext.", n: 1, title: "Release extension, feet" }, { t: "Whiff%", n: 1 }],
+        p.arsenal.map(function (x) { return [String(x.season), PT[x.type] || x.type, x.n, pct(x.usage, 0), num(x.velo, 1), x.spin == null ? "n/a" : String(x.spin), num(x.ivb, 1), num(x.hb, 1), num(x.ext, 1), pct(x.whiff)]; }),
+        { label: "Arsenal by pitch type", caption: "Statcast, tracked AAA and Low-A Florida State League parks only. Movement in inches; horizontal break is positive toward his arm side." }));
+    } else sA.appendChild(h("p", { class: "muted", text: "Not tracked: no pitches at AAA or Low-A Florida State League parks in 2025 or 2026." }));
+    w.appendChild(sA);
+
+    var s3 = sec("h-stats", "Stats");
+    s3.appendChild(table(["Season", "Level", { t: "G", n: 1 }, { t: "GS", n: 1 }, { t: "IP", n: 1 }, { t: "BF", n: 1 }, { t: "K%", n: 1 }, { t: "BB%", n: 1 }, { t: "HR%", n: 1 }, { t: "GB%", n: 1 }, { t: "BABIP", n: 1 }, { t: "RA9", n: 1 }],
+      p.hist.map(function (x) { return [String(x.season), LV(x.level), x.G, x.GS, num(x.IP, 1), x.BF, pct(x.K), pct(x.BB), pct(x.HR), pct(x.GB), rate(x.BABIP), num(x.RA9, 2)]; }),
+      { label: "Level history", caption: "Last three seasons, as pitched. BB% excludes intentional walks." }));
+    w.appendChild(s3);
+    w.appendChild(h("p", { class: "explain", style: "margin-top:24px" }, h("a", { href: "index.html", text: "Back to leaderboard" }), " or read the ", h("a", { href: "method.html", text: "methodology" }), "."));
+  }
+
   /* ---------- methodology ---------- */
   function initMethod() {
     var main = document.getElementById("main");
@@ -367,8 +452,8 @@
       var c10fail = 0; Object.keys(M.C10).forEach(function (st) { ["K", "BB", "ISO", "BABIP"].forEach(function (k) { if (!M.C10[st][k].pass) c10fail++; }); });
 
       w.appendChild(h("h1", { style: "margin-top:24px", text: "Methodology" }));
-      w.appendChild(h("p", { class: "lede" }, "This project puts a surplus dollar value on every hitter from Low-A through AAA using only what shows up in the stat line: production, age, and level. It clearly beats a naive baseline, it trails MLB Pipeline on the lists I could fully score, and it is built to complement scouting, not replace it."));
-      w.appendChild(h("ul", { class: "toc", "aria-label": "Sections" }, [["how", "How it works"], ["results", "How well it works"], ["limits", "What it misses"]].map(function (x) { return h("li", null, h("a", { href: "#" + x[0], text: x[1] })); })));
+      w.appendChild(h("p", { class: "lede" }, "This project puts a surplus dollar value on every hitter and pitcher from Low-A through AAA using only what shows up in the stat line: production, age, and level. It clearly beats a naive baseline, it trails MLB Pipeline on the lists I could fully score, and it is built to complement scouting, not replace it."));
+      w.appendChild(h("ul", { class: "toc", "aria-label": "Sections" }, [["how", "How it works"], ["results", "How well it works"], ["pitchers", "Pitchers"], ["limits", "What it misses"]].map(function (x) { return h("li", null, h("a", { href: "#" + x[0], text: x[1] })); })));
 
       /* how it works */
       w.appendChild(h("h2", { id: "how", text: "How it works" }));
@@ -397,6 +482,20 @@
         h("li", null, h("b", { text: "Ahead of Pipeline on the 2019 and 2020 lists" }), "Rank correlation with WAR through 2026 of " + r2(p12.spearman_model) + " for the model vs " + r2(p12.spearman_list) + " for Pipeline (n = " + L12.n + "). That window is shorter and rewards quick arrival, and the sample is small, so I read it as encouraging rather than proof.")));
       w.appendChild(P("Trailing Pipeline on the full six-year test was the expected result. Hitters on a top 100 list have already passed a scouting screen, and the model knows nothing about tools, swing decisions, or makeup. Where it adds value is breadth: it puts a dollar value and a range on all " + n(cov.players_2026) + " hitters, including the thousands no list covers, and gives a consistent, stat-based check against how a player is ranked."));
 
+      /* pitchers (v2) */
+      var X = M.pitchers;
+      if (X) {
+        var P3 = X.c3, h13 = X.holdout_2013_17.stat, c12y = Object.keys(X.c12), bd = X.c19.board;
+        w.appendChild(h("h2", { id: "pitchers", text: "Pitchers" }));
+        w.appendChild(P("Pitchers go through the same four steps with their own pieces. Strikeout, walk, hit-by-pitch, home run, ground-ball and extra-base rates are park-adjusted and translated to MLB equivalents with pitchers who moved between levels. Pitcher WAR is built from those components and anchored so pitchers earn 41% of all WAR and hitters 59%, the Baseball-Reference split, which puts both on one dollar scale. Starters and relievers get separate replacement levels per appearance, and relief innings are scaled by leverage. The models are fit separately from the hitter models; cross-validation picked a regularized linear model for both reaching MLB and WAR."));
+        w.appendChild(P("Role enters through starts share, innings per game and pitches per game. For pitchers tracked by Statcast, the extra-base rate is replaced by one implied by xwOBA on contact, which predicted next season's contact damage better than the box score did (RMSE " + X.c17.rmse_xwoba_only.toFixed(4).replace(/^0/, "") + " vs " + X.c17.rmse_observed.toFixed(4).replace(/^0/, "") + ", n = " + n(X.c17.n) + "). A Bayesian run-prevention estimate, mERA, was tested as an input and dropped: it improved reach-probability log loss by " + X.c15.mera_cv.d_logloss_gain.toFixed(4) + " but made the value ranking slightly worse, so it is shown on cards only. P(starter) is display only too (AUC " + r2(X.psp.oof_auc) + " on " + n(X.psp.n) + " debuts)."));
+        w.appendChild(h("ul", { class: "results" },
+          h("li", null, h("b", { text: "Beats a naive baseline on 2013 to 2017" }), "Log loss " + r3(P3.logloss_model) + " vs " + r3(P3.logloss_baseline) + " for age, level and K-BB%, and value-ranking correlation " + r3(P3.spearman_model) + " vs " + r3(P3.spearman_baseline) + " (n = " + n(P3.n) + "; AUC " + r2(h13.auc) + ")."),
+          h("li", null, h("b", { text: "Even with Pipeline on the 2014 to 2018 lists" }), "Rank correlation with six-year WAR of " + r2(X.c2.spearman_model) + " for the model vs " + r2(X.c2.spearman_list) + " for Pipeline's top 100 pitchers (n = " + X.c2_n + ")."),
+          h("li", { class: "bad" }, h("b", { text: "Weaker on 2018 and 2019" }), "It still beats the baseline on log loss, but its value ranking trails it (" + c12y.map(function (y) { return y + ": " + r3(X.c12[y].spearman_model) + " vs " + r3(X.c12[y].spearman_baseline); }).join("; ") + "), and Pipeline beat it on the 2019 and 2020 lists (" + r2(X.c12_lists.spearman_model) + " vs " + r2(X.c12_lists.spearman_list) + ", n = " + X.c12_lists_n + "). Recent seasons differ from the training years: starters throw fewer innings and minor league walk rates jumped with the automated strike zone.")));
+        w.appendChild(P("On the combined 2026 board, pitchers rank low: " + (bd.top50_roles.P || 0) + " of the top 50 and " + (bd.top100_roles.P || 0) + " of the top 100. Debuting pitchers and hitters produce similar six-year WAR on average, but pitcher outcomes are harder to call from a stat line, so even the model's best pitchers carry less expected WAR than its best hitters. Straightening out the walk-rate drift or recalibrating the WAR model did not change that. Use the Players filter to rank pitchers against each other; the hitter/pitcher WAR split barely matters (" + bd.n.toLocaleString() + " players; top 50 unchanged at a 57/43 or 61/39 split)."));
+      }
+
       /* limits */
       w.appendChild(h("h2", { id: "limits", text: "What it misses" }));
       w.appendChild(h("ul", null,
@@ -405,7 +504,7 @@
         low.length ? h("li", null, h("b", { text: "Mid-range odds. " }), "Players given roughly a " + Math.round(Math.min.apply(null, low.map(function (d) { return d.predicted; })) * 20) * 5 + " to " + Math.round(Math.max.apply(null, low.map(function (d) { return d.predicted; })) * 20) * 5 + " percent chance of reaching MLB actually reached more often than predicted, likely because recent classes debut at higher rates than the training years did.") : null,
         c10fail ? h("li", null, h("b", { text: "Lower-level translations. " }), "Translations are still slightly harsh on the lower levels, so a Low-A hitter's MLB-equivalent line understates him a little compared to a AAA hitter's.") : null,
         h("li", null, h("b", { text: "Draft-based projections. " }), "Hitters without enough upper-level playing time are projected from their draft position alone. These are the weakest numbers on the site and are flagged everywhere they appear."),
-        h("li", null, h("b", { text: "Hitters only. " }), "Pitchers are not modeled.")));
+        h("li", null, h("b", { text: "Pitchers sit low on the combined board. " }), "See the pitcher section: the model's best pitchers carry less expected WAR than its best hitters, and recent minor league walk rates make 2026 pitchers look wilder than the pitchers it learned from.")));
       w.appendChild(P("The clear next step is blending in scouting grades, which goes straight at the model's biggest weakness, along with minor league defensive metrics and pitch-level swing decision data where it exists. Armed with that information, I would expect the gap to Pipeline on high-ceiling players to narrow considerably."));
       w.appendChild(h("p", { style: "margin-top:20px" }, "Jack Huffard. Model run " + M.run_date + "."));
     }).catch(function (e) { chrome("method"); fail(e.message); });

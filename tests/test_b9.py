@@ -9,7 +9,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 D = SITE / "data"
-LB = json.loads((D / "leaderboard.json").read_text())["rows"]
+LB = [r for r in json.loads((D / "leaderboard.json").read_text())["rows"] if r.get("role", "H") == "H"]  # B25 adds pitchers
 V = pd.read_parquet(ROOT / "data" / "valuations.parquet")
 V = V[(V.fit == "final") & (V.season == 2026)].set_index("player_id")
 KEYS = {"id", "name", "org", "level", "age", "group", "low_conf", "hist", "chain", "p_mlb", "war", "eta", "surplus", "drivers", "batted", "pos_probs", "bio", "rank"}

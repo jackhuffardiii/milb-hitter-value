@@ -65,7 +65,7 @@ def phrases(r, ref):
             out[fam] = (f"MLB-equivalent {lab} {f(v)} vs {f(ref[col])} prospect avg", 1 if v > ref[col] else -1)
     gs, ipg = r.get("blend_GS_share"), r.get("blend_outs_per_G")
     out["Role"] = (f"{gs:.0%} starts, {ipg / 3:.1f} IP per game" if pd.notna(gs) and pd.notna(ipg) else "Role", 0)
-    out["Development pace"] = (f"{r.pro_years:.0f} pro years, {r.BF_s:.0f} BF at {lv} and below this season"
+    out["Development pace"] = (f"{r.pro_years:.0f} pro year{'' if r.pro_years == 1 else 's'}, {r.BF_s:.0f} BF at {lv} and below this season"
                                if pd.notna(r.get("pro_years")) else "Development pace", 0)
     body = [f"Height {r.height_in:.0f} in"] if pd.notna(r.get("height_in")) else []
     out["Body"] = (", ".join(body + [f"throws {r.throws}"]) if pd.notna(r.get("throws")) else (body[0] if body else "Body"), 0)
