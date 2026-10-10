@@ -3,6 +3,7 @@ functions with pitcher components): park-neutralize, matched same-season (>=50 B
 drift from same-level repeaters) pairs, league-season -> level-season -> level-all shrinkage, chain to MLB, regress toward
 the source league-season mean, roll up to player-season, level-step test.
 Components: K=SO/BF, BB=(BB-IBB)/BF, HBP=HBP/BF, HR=HR/BF, GB=GO/(GO+AO) (outs-based), XB=(2B+2*3B)/BIP.
+R=R/BF (runs allowed) is translated too: it is the B19 mERA target and the S22 ladder scale, never a model input.
 """
 import json
 
@@ -13,11 +14,12 @@ from .b3_park import player_park
 from .b4_mle import LEVELS, MEXICAN_LEAGUE, aging_drift, apply_mle, build_pairs, level_step, player_season, regress, rollup, translation_factors
 from .common import DATA
 
-COMPS = ["K", "BB", "HBP", "HR", "GB", "XB"]
-DEN = {"K": "BF", "BB": "BF", "HBP": "BF", "HR": "BF", "GB": "GOAO", "XB": "BIP"}
+COMPS = ["K", "BB", "HBP", "HR", "GB", "XB", "R"]
+DEN = {"K": "BF", "BB": "BF", "HBP": "BF", "HR": "BF", "GB": "GOAO", "XB": "BIP", "R": "BF"}
 # Carleton (2012) pitcher reliability / stabilization points, in each component's own denominator
-K_STAB = {"K": 70, "BB": 170, "HBP": 640, "HR": 1320, "GB": 70, "XB": 1450}
-PARK = {"K": "SO", "BB": "BB", "HBP": "BB", "HR": "HR", "XB": "2B3B"}  # GB has no park factor
+K_STAB = {"K": 70, "BB": 170, "HBP": 640, "HR": 1320, "GB": 70, "XB": 1450,
+          "R": 1000}  # R: no Carleton point; reg_R is never read (B19 uses mle_R as the target)
+PARK = {"K": "SO", "BB": "BB", "HBP": "BB", "HR": "HR", "XB": "2B3B", "R": "R"}  # GB has no park factor
 
 
 def rates(d):
@@ -31,10 +33,11 @@ def rates(d):
     d["HR"] = d.HR / z(d.BF)
     d["GB"] = d.GO / z(d.GOAO)
     d["XB"] = (d["2B"] + 2 * d["3B"]) / z(d.BIP)
+    d["R"] = d.R / z(d.BF)
     return d
 
 
-COUNTS = ["BF", "SO", "BB", "IBB", "HBP", "HR", "GO", "AO", "2B", "3B"]
+COUNTS = ["BF", "SO", "BB", "IBB", "HBP", "HR", "GO", "AO", "2B", "3B", "R"]
 
 
 def _neutral(d, ppf):
