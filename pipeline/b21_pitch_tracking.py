@@ -17,6 +17,7 @@ from sklearn.model_selection import GroupKFold
 from .b5_features import MEXICAN_LEAGUE
 from .b9_site import PITCH_FAMILY, SAVANT_SPLITS, savant_family
 from .b11_batted import BBT
+from . import config
 from .common import DATA, _get
 
 ARSENAL_SEASONS = range(2021, 2027)
@@ -136,7 +137,8 @@ def main():
     a = aaa_contact()
     contact = contact.merge(a[["player_id", "season", "XB", "BIP"]], on=["player_id", "season"], how="left")
     # Jack, 2026-10-10: with tracking, use xwOBAcon alone (D ties the blend B on C17; box-score XB adds nothing once xwOBAcon is known)
-    contact["xb_contact_adj"] = f[0] + f[1] * contact.xwoba
+    contact["xb_contact_adj"] = (f[0] + f[1] * contact.xwoba if config.CONTACT_XWOBA_ONLY
+                                 else blend(contact.XB.fillna(0), contact.BIP.fillna(0), contact.xwoba, f, k))  # no AAA BIP -> pure f(xwOBAcon)
     contact[["player_id", "season", "xwoba", "bip", "xb_contact_adj"]].to_parquet(DATA / "pitch_contact.parquet", index=False)
     (DATA / "b21_c17.json").write_text(json.dumps(res, indent=1))
     print(json.dumps(res, indent=1))

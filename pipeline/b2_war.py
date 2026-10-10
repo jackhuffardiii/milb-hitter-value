@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 import requests
 
+from pipeline import config
 from pipeline.common import DATA, RAW, api_get, pmap
 
 YEARS = range(2005, 2027)
-POS_WAR_PER_2430 = 590  # S17: position-player WAR per 2,430 MLB games (Baseball-Reference split)
+POS_WAR_PER_2430 = config.POS_WAR_PER_2430  # S17: position-player WAR per 2,430 MLB games (Baseball-Reference split)
 EVENTS = ["1B", "2B", "3B", "HR", "uBB_HBP", "out"]
 POS_RUNS = {"C": 12.5, "SS": 7.5, "2B": 2.5, "3B": 2.5, "CF": 2.5, "LF": -7.5, "RF": -7.5, "1B": -12.5,
             "DH": -17.5, "OF": -2.5}  # OF (generic) never occurs in the data; kept for safety

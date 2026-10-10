@@ -18,6 +18,7 @@ import pandas as pd
 
 from . import b22_pitch_models  # noqa: F401  registers the pitch_* kinds in b6.XFN for drivers()
 from .b8_value import grouped_drivers, load_params, value, war_profile
+from . import config
 from .common import DATA
 
 PREFIX = "pitch_"
@@ -96,7 +97,7 @@ def board(hv, pv):
                      pd.read_parquet(DATA / "pitch_features.parquet").query("season == 2026")[["player_id", "BF_s"]].set_index("player_id").BF_s],
                     axis=1)
     both = set(h.player_id) & set(p.player_id)
-    two = {i for i in both if vol.PA_s.get(i, 0) >= 150 and vol.BF_s.get(i, 0) >= 150}
+    two = {i for i in both if vol.PA_s.get(i, 0) >= config.TWO_WAY_MIN_PA and vol.BF_s.get(i, 0) >= config.TWO_WAY_MIN_BF}
     keep_h = {i for i in both - two if vol.PA_s.get(i, 0) >= vol.BF_s.get(i, 0)}
     rows = [h[~h.player_id.isin(both) | h.player_id.isin(keep_h)], p[~p.player_id.isin(both) | p.player_id.isin(both - two - keep_h)]]
     if two:

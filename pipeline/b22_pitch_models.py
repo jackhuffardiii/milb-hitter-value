@@ -27,11 +27,12 @@ from .b6_models import (MODELS, PRIOR_CFG, SPREAD, XFN, _make, _predict, _reach9
                         person_period, predict, select_stat)
 from .b20_pitch_features import pitch_X
 from .b21_pitch_tracking import aaa_contact
+from . import config
 from .common import DATA
 
 K = ["player_id", "season"]
 WT = "pitch_war_target.parquet"
-MIN_AAA_BIP = 100
+MIN_AAA_BIP = config.CONTACT_MIN_AAA_BIP
 PITCH_SPREAD = ["age", "age_vs_level", "level_num", "pro_years", "blend_GS_share"]  # variance-model inputs (stat)
 
 
@@ -102,12 +103,13 @@ def main():
     MODELS.mkdir(exist_ok=True)
     f, adjusted = contact_adjust(pd.read_parquet(DATA / "pitch_features.parquet"))
     st, pr = f[f.group == "stat"], f[f.group == "prior"]
-    cfg, cv = select_stat(st[st.season <= 2012], "pitch_stat", WT)
+    S, F, L = config.SELECT_CUTOFF, config.FIT2017_CUTOFF, config.FINAL_CUTOFF
+    cfg, cv = select_stat(st[st.season <= S], "pitch_stat", WT)
     print("selection (s<=2012 CV):", json.dumps(cv, default=float))
     fits = {  # name: (train rows, war cutoff, predict rows, driver rows)
-        "backtest": (lambda d: d[d.season <= 2012], 2012, lambda d: d[d.season.between(2013, 2017)], True),
-        "fit2017": (lambda d: d[d.season <= 2017], 2014, lambda d: d[d.season.between(2018, 2019)], False),
-        "final": (lambda d: d[d.season <= 2025], 2014, lambda d: d[d.season >= 2018], True),
+        "backtest": (lambda d: d[d.season <= S], S, lambda d: d[d.season.between(S + 1, F)], True),
+        "fit2017": (lambda d: d[d.season <= F], config.WAR_CUTOFF_PITCH, lambda d: d[d.season.between(F + 1, F + 2)], False),
+        "final": (lambda d: d[d.season <= L], config.WAR_CUTOFF_PITCH, lambda d: d[d.season >= F + 1], True),
     }
     preds, drv = [], []
     metrics = {"cv_stat": cv, "chosen_stat": {k: v["chosen"] for k, v in cfg.items()}}

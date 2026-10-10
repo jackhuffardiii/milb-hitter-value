@@ -105,3 +105,11 @@ Expected directions:
 - **B24** Surplus $ for pitchers, two-way sum (S29), combined board, C19. (S)
 - **B25** Site and methodology (S26, S30). (M)
 - **B26** 2026 snapshot run, smell test (C6) on the combined top 50, publish (S31). (S)
+
+## Build deviations and outcomes (v2, recorded 2026-10-10; items above are unchanged as pre-registered)
+- **C15**: applied as written (no tolerance; Jack's call over B12's tolerances). Both mERA candidates fail: mERA is display only.
+- **S28 / C17**: C17 passes (blend RMSE .0565 vs observed .0573, n 237). After the gate, Jack chose the xwOBA-only version (xwOBAcon alone ties the blend, .0564): the tracked contact term is f(xwOBAcon), not a sample-size blend. mERA is not refit (display only).
+- **A12 (pitchers)**: WAR trains through s <= 2014 for fit2017/final (the under-2%-censored rule gives 2014 for pitchers, 2015 for hitters).
+- **C20**: 2013-17 beats the naive baseline and ties Pipeline; 2018-19 ranking trails the baseline and Pipeline (see docs/handoff.md B23).
+- **C6 / C22**: combined 2026 top 50 has no pitchers (top 100: 2). Among pitchers the order matches Pipeline closely (Anderson #1 in both; 7 of Pipeline's top 10 pitchers in our top 11). The cross-position level gap holds up under season-centering and WAR recalibration (docs/b24_sensitivity.py). Open for Jack before publishing.
+- **Audit (B22)**: era drift in pitcher MLE BB% (2022+ automated strike zone) is disclosed, not corrected.

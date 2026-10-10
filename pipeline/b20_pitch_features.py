@@ -1,8 +1,9 @@
 """B20: pitcher snapshot table (S21, S23, S24, S25, S26, C15), mirroring B5 for hitters.
 
 One row per pitcher x season s (2005-2026) with affiliated MiLB pitching in s (not Mexican League), who is a pitcher
-(bio primary_pos P/TWP) or threw >= 150 BF in s (S29), and is rookie-eligible at end of s (career MLB outs through s < 150).
-group 'stat' (A..AAA BF over s and s-1 >= 150, or over s, s-1, s-2 when under 60 A..AAA outs in s; and complete reg_K/BB/GB/XB
+(bio primary_pos P/TWP) or threw config.PITCHER_MIN_BF BF in s (S29), and is rookie-eligible at end of s (career MLB outs through s
+below config.ROOKIE_MAX_MLB_OUTS).
+group 'stat' (A..AAA BF over s and s-1 >= config.STAT_MIN_BF, or over s, s-1, s-2 when under config.STAT_SHORT_OUTS A..AAA outs in s; and complete reg_K/BB/GB/XB
 for s) else 'prior'. Non-stat rows carry NaN MLE / mERA features. Labels: reached_mlb, eta_years, war_6yr.
 Also writes p_sp (S24, logistic P(starter) display column, never a model feature -> data/b20_psp.json) and runs the C15 gate
 for mERA as a feature (-> data/b20_c15.json), mirroring B12's evaluator on s <= 2012 stat, not-debuted rows (GroupKFold(5)).
@@ -24,8 +25,10 @@ from sklearn.preprocessing import StandardScaler
 
 from .b5_features import LVL, MEXICAN_LEAGUE, YEARS, _blend, draft_features
 from .b6_models import _lgb_cv, _linear, _predict
+from . import config
 from .common import DATA
 
+W0, W1 = config.BLEND_WEIGHTS
 RATES = ["K", "BB", "HBP", "HR", "GB", "XB"]
 STAT_REG = ["reg_K", "reg_BB", "reg_GB", "reg_XB"]
 PSP_FEATS = ["blend_GS_share", "blend_outs_per_G", "blend_pitches_per_G", "reg_K", "reg_BB", "reg_GB", "age", "level_num"]
@@ -68,7 +71,7 @@ def _lag_blend(snap, T, rates, w, prefix):
     snap = snap.merge(p, on=K, how="left")
     for r in rates:
         x0, x1 = snap[f"{prefix}{r}"], snap[f"p_{prefix}{r}"]
-        w0, w1 = 3 * snap[w], (2 * snap["p_" + w]).where(x1.notna(), 0)
+        w0, w1 = W0 * snap[w], (W1 * snap["p_" + w]).where(x1.notna(), 0)
         snap[f"blend_{prefix}{r}"] = (x0 * w0 + x1.fillna(0) * w1) / (w0 + w1)
         snap[f"delta_{prefix}{r}"] = x0 - x1
     return snap.drop(columns=["p_" + w] + [f"p_{prefix}{r}" for r in rates])
@@ -113,17 +116,17 @@ def build():
     role = _role(S)
     snap = snap.merge(role.drop(columns="BF_s"), on=K, how="left")
 
-    # population: pitcher by bio or >= 150 BF; rookie eligible (S25); 2005-2026
+    # population: pitcher by bio or >= config.PITCHER_MIN_BF BF; rookie eligible (S25); 2005-2026
     snap = snap.merge(pl[["player_id", "primary_pos", "height_in", "weight_lb", "mlb_debut_date", "full_name", "throws"]]
                       .rename(columns={"throws": "bio_throws", "full_name": "name"}), on="player_id", how="left")
     snap["throws"] = snap.throws.fillna(snap.bio_throws)
     snap = snap.drop(columns="bio_throws")
-    snap = snap[snap.primary_pos.isin(["P", "TWP"]) | (snap.BF_s >= 150)].drop(columns="primary_pos")
+    snap = snap[snap.primary_pos.isin(["P", "TWP"]) | (snap.BF_s >= config.PITCHER_MIN_BF)].drop(columns="primary_pos")
     mo = mp.groupby(K).outs.sum().reset_index().sort_values(K)
     c = snap[K].merge(mo, on="player_id", suffixes=("", "_m"))
     c = c[c.season_m <= c.season].groupby(K).outs.sum().rename("mlb_outs_thru")
     snap = snap.merge(c.reset_index(), on=K, how="left")
-    snap = snap[(snap.mlb_outs_thru.fillna(0) < 150) & snap.season.isin(YEARS)].drop(columns="mlb_outs_thru")
+    snap = snap[(snap.mlb_outs_thru.fillna(0) < config.ROOKIE_MAX_MLB_OUTS) & snap.season.isin(YEARS)].drop(columns="mlb_outs_thru")
 
     # stat group (S25): A..AAA BF over s, s-1 (and s-2 if under 60 outs in s) and complete reg_ for s
     H = S[S.lv >= 1].groupby(K)[["BF", "outs"]].sum().reset_index()
@@ -133,13 +136,13 @@ def build():
     for n in (1, 2):
         snap = snap.merge(lag(n), on=K, how="left")
     bf0, outs0 = snap.bf0.fillna(0), snap.outs0.fillna(0)
-    snap["bf_win"] = bf0 + snap.bf1.fillna(0) + snap.bf2.fillna(0).where(outs0 < 60, 0)
+    snap["bf_win"] = bf0 + snap.bf1.fillna(0) + snap.bf2.fillna(0).where(outs0 < config.STAT_SHORT_OUTS, 0)
     snap = snap.drop(columns=["bf0", "outs0", "bf1", "bf2"])
     mle = pd.read_parquet(DATA / "pitch_mle_player_season.parquet")
     regc = [f"reg_{r}" for r in RATES]
     mc = mle[K + ["BF"] + regc].rename(columns={"BF": "mle_BF"})
     snap = snap.merge(mc, on=K, how="left")
-    snap["group"] = np.where((snap.bf_win >= 150) & snap[STAT_REG].notna().all(axis=1), "stat", "prior")
+    snap["group"] = np.where((snap.bf_win >= config.STAT_MIN_BF) & snap[STAT_REG].notna().all(axis=1), "stat", "prior")
     stat = (snap.group == "stat").to_numpy()
     snap.loc[~stat, regc + ["mle_BF"]] = np.nan
     snap = _lag_blend(snap, mc, RATES, "mle_BF", "reg_").drop(columns=["bf_win", "mle_BF"])

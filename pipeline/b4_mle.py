@@ -16,17 +16,18 @@ import json
 import numpy as np
 import pandas as pd
 
+from . import config
 from .common import DATA
 
 LEVELS = ["a", "a+", "aa", "aaa", "mlb"]
 NEXT = dict(zip(LEVELS[:-1], LEVELS[1:]))
 COMPS = ["K", "BB", "ISO", "BABIP"]
 MEXICAN_LEAGUE = 125  # unaffiliated; appears under AAA through 2019
-MIN_PA = 50
-MIN_PA_CROSS = 300  # S6 v1.1: cross-season pairs (L in s -> L+1 in s+1) need >= 300 PA at both ends
+MIN_PA = config.MIN_PAIR
+MIN_PA_CROSS = config.MIN_PAIR_CROSS  # S6 v1.1: cross-season pairs (L in s -> L+1 in s+1) need >= 300 PA at both ends
 AGE_BUCKETS = [0, 21.5, 23.5, 25.5, 99]  # <=21, 22-23, 24-25, 26+ (age on July 1 of s)
 # FanGraphs stabilization points (denominator unit: PA for K/BB, AB for ISO, BIP for BABIP)
-K_STAB = {"K": 60, "BB": 120, "ISO": 160, "BABIP": 820}
+K_STAB = config.K_STAB_HIT
 DEN = {"K": "PA", "BB": "PA", "ISO": "AB", "BABIP": "BIP"}
 K_FIXED = 20000.0  # pair-weight fallback when reliability is unusable (r <= 0.05 or < 15 adjacent pairs)
 

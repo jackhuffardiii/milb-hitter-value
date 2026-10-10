@@ -12,13 +12,13 @@ import pandas as pd
 
 from .b3_park import player_park
 from .b4_mle import LEVELS, MEXICAN_LEAGUE, aging_drift, apply_mle, build_pairs, level_step, player_season, regress, rollup, translation_factors
+from . import config
 from .common import DATA
 
 COMPS = ["K", "BB", "HBP", "HR", "GB", "XB", "R"]
 DEN = {"K": "BF", "BB": "BF", "HBP": "BF", "HR": "BF", "GB": "GOAO", "XB": "BIP", "R": "BF"}
 # Carleton (2012) pitcher reliability / stabilization points, in each component's own denominator
-K_STAB = {"K": 70, "BB": 170, "HBP": 640, "HR": 1320, "GB": 70, "XB": 1450,
-          "R": 1000}  # R: no Carleton point; reg_R is never read (B19 uses mle_R as the target)
+K_STAB = config.K_STAB_PITCH  # R has no Carleton point; reg_R is never read (B19 uses mle_R as the target)
 PARK = {"K": "SO", "BB": "BB", "HBP": "BB", "HR": "HR", "XB": "2B3B", "R": "R"}  # GB has no park factor
 
 

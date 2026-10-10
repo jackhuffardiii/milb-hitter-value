@@ -13,8 +13,10 @@ S22 ladder: mERA (MLB scale) divided by the B18 level-season runs chain factor o
 
 Outputs (data/): pitch_mera.parquet (row grain), pitch_mera_player_season.parquet, b19_mera.json.
 """
+import hashlib
 import json
 import os
+from pathlib import Path
 
 os.environ.setdefault("PYTENSOR_FLAGS", f"base_compiledir={os.path.abspath('data/raw/pytensor')}")
 
@@ -134,7 +136,31 @@ def ladder(m, col):
     return m
 
 
+CACHE = DATA / "b19_cache.json"  # fingerprint of the last fit's inputs; delete it to force a refit
+OUTPUTS = ["pitch_mera.parquet", "pitch_mera_player_season.parquet", "b19_mera.json"]
+
+
+def fingerprint():
+    """SHA-256 over this step's code, the b18/b4 code it imports, and every input file it reads."""
+    here = Path(__file__).parent
+    files = [here / f for f in ("b19_mera.py", "b18_pitch_mle.py", "b4_mle.py")]
+    files += [DATA / f for f in ("pitch_mle.parquet", "mlb_pitching.parquet", "pitch_translation_factors.parquet", "park_factors.parquet")]
+    h = hashlib.sha256()
+    for f in files:
+        h.update(f.read_bytes())
+    return h.hexdigest()
+
+
 def main():
+    fp = fingerprint()
+    if CACHE.exists() and json.loads(CACHE.read_text()).get("fingerprint") == fp and all((DATA / f).exists() for f in OUTPUTS):
+        print("b19: inputs and code unchanged, keeping the fitted mERA (delete data/b19_cache.json to refit)")
+        return
+    build()
+    CACHE.write_text(json.dumps({"fingerprint": fp}))
+
+
+def build():
     m = rows()
     t_cv = train_set(m, CV_LAST)
     std = {"mean": t_cv[X_COLS].mean().to_numpy(), "sd": t_cv[X_COLS].std().to_numpy()}

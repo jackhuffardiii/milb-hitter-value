@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 
 from .b2_war import POS_RUNS
+from . import config
 from .common import DATA
 
+W0, W1 = config.BLEND_WEIGHTS
 LVL = {"rk": 0, "a-": 0.5, "a": 1, "a+": 2, "aa": 3, "aaa": 4}
 POS9 = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH"]
 RATES = ["K", "BB", "ISO", "BABIP"]
@@ -36,7 +38,7 @@ def _blend(A, cols, w):
     P = A[["player_id", "season", w] + cols].assign(season=A.season + 1)
     M = A.merge(P, on=["player_id", "season"], how="left", suffixes=("", "_p"))
     for c in cols:
-        w0, w1 = 3 * M[w].where(M[c].notna(), 0), 2 * M[w + "_p"].where(M[c + "_p"].notna(), 0)
+        w0, w1 = W0 * M[w].where(M[c].notna(), 0), W1 * M[w + "_p"].where(M[c + "_p"].notna(), 0)
         M["blend_" + c] = (M[c].fillna(0) * w0 + M[c + "_p"].fillna(0) * w1) / (w0 + w1).where(lambda x: x > 0)
     return M[["player_id", "season"] + ["blend_" + c for c in cols]]
 
@@ -201,7 +203,7 @@ def main():
     snap = snap[snap.mlb_ab_thru.fillna(0) < 130].drop(columns="mlb_ab_thru")
     snap = snap[snap.season.isin(YEARS)]
 
-    # stat group (Q7): A..AAA PA over s and s-1 >= 150 and complete reg_ for s
+    # stat group (Q7): A..AAA PA over s and s-1 >= config.STAT_MIN_PA and complete reg_ for s
     aaa = S[S.lv >= 1].groupby(["player_id", "season"]).PA.sum()
     prev = aaa.rename("pa_prev").reset_index().assign(season=lambda d: d.season + 1)
     snap = snap.merge(aaa.rename("pa_cur").reset_index(), on=["player_id", "season"], how="left")
@@ -211,7 +213,7 @@ def main():
     regc = [f"reg_{c}" for c in RATES]
     mc = mle[["player_id", "season", "PA"] + regc].rename(columns={"PA": "mle_PA"})
     snap = snap.merge(mc, on=["player_id", "season"], how="left")
-    snap["group"] = np.where((snap.pa_two >= 150) & snap[regc].notna().all(axis=1), "stat", "prior")
+    snap["group"] = np.where((snap.pa_two >= config.STAT_MIN_PA) & snap[regc].notna().all(axis=1), "stat", "prior")
     stat = snap.group == "stat"
     snap.loc[~stat, regc] = np.nan
     # Marcel blend s (w=3) + s-1 (w=2), weighted by PA*w, and trajectory

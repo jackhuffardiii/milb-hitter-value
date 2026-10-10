@@ -15,10 +15,11 @@ import pandas as pd
 import requests
 
 from pipeline.b2_war import UA, target
+from pipeline import config
 from pipeline.common import DATA, RAW
 
-PITCH_WAR_PER_2430 = 410  # S17: pitcher WAR per 2,430 MLB games (Baseball-Reference split)
-SP_RP_GAP = 0.09  # Q20: wins per 9 IP, FanGraphs SP .380 vs RP .470 replacement (0.12 vs 0.03 below average)
+PITCH_WAR_PER_2430 = config.PITCH_WAR_PER_2430  # S17: pitcher WAR per 2,430 MLB games (Baseball-Reference split)
+SP_RP_GAP = config.SP_RP_GAP  # Q20: wins per 9 IP, FanGraphs SP .380 vs RP .470 replacement (0.12 vs 0.03 below average)
 BWAR_PITCH_URL = "https://www.baseball-reference.com/data/war_daily_pitch.txt"
 
 

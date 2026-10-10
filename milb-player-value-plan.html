@@ -124,7 +124,7 @@
   <h1>MiLB Player Value v2: pitchers</h1>
   <p class="claim">Pitchers join hitters on one surplus-dollar board. Both groups share a WAR scale anchored every season to Baseball-Reference's 590 hitter / 410 pitcher split, so a 2-WAR pitcher and a 2-WAR hitter are worth the same.</p>
   <div class="meta">
-    <span class="status">draft · pre-registered</span>
+    <span class="status">built 2026-10-10 · C6 open for review</span>
     <span>decided 2026-10-09 via grill-me</span>
     <span>spec: <code>milb-player-value-spec.md</code></span>
     <span>branch: <code>v2-pitchers</code></span>
@@ -272,6 +272,17 @@
   <li>Forward-chained CV scores worse than random folds. The gap measures drift.</li>
   <li>Pitcher P(MLB) at a given level and age is lower than hitters', and the 10–90 WAR range is wider.</li>
 </ul>
+</section>
+
+<section>
+<h2>Build results (recorded 2026-10-10)</h2>
+<p class="lede">How the pre-registered predictions and gates came out. Full numbers live in <code>docs/handoff.md</code>.</p>
+<div class="row"><span class="id">C15</span><p>Failed, applied as written with no tolerance: mERA helped log loss (+.0025) but lowered the value ranking (−.002).<span class="why">mERA is display only. Jack chose the strict reading.</span></p></div>
+<div class="row"><span class="id">C17</span><p>Passed: blended contact RMSE .0565 vs observed .0573 (n 237).<span class="why">xwOBA on contact alone tied the blend (.0564); Jack chose the xwOBA-only version for tracked pitchers.</span></p></div>
+<div class="row"><span class="id">C18</span><p>As predicted, forward-chained CV is worse: log loss .454 vs .440, WAR Spearman .18 vs .24.</p></div>
+<div class="row"><span class="id">C20</span><p>2013–17: beats the age + K−BB% baseline (log loss .462 vs .521, value Spearman .116 vs .086) and ties Pipeline pitchers (.19 vs .17). 2018–19: still ahead on log loss, but the value ranking trails the baseline and Pipeline.<span class="why">Consistent with drift: 2022+ minor league walk rates jumped with the automated strike zone and starters throw fewer innings.</span></p></div>
+<div class="row"><span class="id">C6</span><p>Open: the combined 2026 top 50 has no pitchers (2 in the top 100). Among pitchers the order matches Pipeline closely (Kade Anderson #1 in both).<span class="tag review">review</span><span class="why">The gap survives season-centering and WAR recalibration. Pitcher outcomes are harder to call from stats, so expected WAR regresses more.</span></p></div>
+<div class="row"><span class="id">Pred.</span><p>Wrong: pitchers do not reach MLB less often than hitters at a given level and age (equal when young for level, more often when old), and their 10–90 WAR range is narrower (median 3.6 vs 6.0 wins), not wider.</p></div>
 </section>
 
 <section>

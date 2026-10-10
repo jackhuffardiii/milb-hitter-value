@@ -32,6 +32,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from pipeline.b5_features import S15_KEPT
+from pipeline import config
 from pipeline.common import DATA
 
 warnings.filterwarnings("ignore", message="Skipping features without any observed values")  # log_bonus is all-NaN pre-2017
@@ -314,7 +315,7 @@ def select_stat(train, kind="stat", war_target=WAR_TARGET):
     gbm = log_loss(yh, np.clip(oof, 1e-6, 1 - 1e-6))
     cfg = {"hazard": {"chosen": "lightgbm" if gbm < lin else "linear", "n": n}}
     cv = {"hazard": {"linear": lin, "lightgbm": gbm, "n_person_periods": int(len(yh)), "lgb_n_estimators": n}}
-    m = _war_mask(train, 2012, war_target)
+    m = _war_mask(train, config.SELECT_CUTOFF, war_target)
     Xm, ym, gm = X[m].reset_index(drop=True), train.war_6yr.to_numpy()[m], g[m]
     lo = _lin_cv("war", Xm, ym, gm)
     go, nw = _lgb_cv("war", Xm, ym, gm)
@@ -453,13 +454,14 @@ def main():
     MODELS.mkdir(exist_ok=True)
     f = pd.read_parquet(DATA / "features.parquet")
     st, pr = f[f.group == "stat"], f[f.group == "prior"]
-    cfg, cv = select_stat(for_fit(st[st.season <= 2012], "backtest"))
+    S, F, L = config.SELECT_CUTOFF, config.FIT2017_CUTOFF, config.FINAL_CUTOFF
+    cfg, cv = select_stat(for_fit(st[st.season <= S], "backtest"))
     print("selection (s<=2012 CV):", json.dumps(cv, default=float))
     fits = {  # name: (train rows, war cutoff, predict rows, driver rows)
-        "backtest": (lambda d: for_fit(d[d.season <= 2012], "backtest"), 2012,
-                     lambda d: for_fit(d[d.season.between(2013, 2017)], "backtest"), True),
-        "fit2017": (lambda d: d[d.season <= 2017], 2015, lambda d: d[d.season.between(2018, 2019)], False),
-        "final": (lambda d: d[d.season <= 2025], 2015, lambda d: d[d.season >= 2018], True),
+        "backtest": (lambda d: for_fit(d[d.season <= S], "backtest"), S,
+                     lambda d: for_fit(d[d.season.between(S + 1, F)], "backtest"), True),
+        "fit2017": (lambda d: d[d.season <= F], config.WAR_CUTOFF_HIT, lambda d: d[d.season.between(F + 1, F + 2)], False),
+        "final": (lambda d: d[d.season <= L], config.WAR_CUTOFF_HIT, lambda d: d[d.season >= F + 1], True),
     }
     preds, drv = [], []
     metrics = {"cv_stat": cv, "chosen_stat": {k: v["chosen"] for k, v in cfg.items()}}
