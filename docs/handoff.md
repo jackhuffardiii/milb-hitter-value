@@ -541,3 +541,11 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Fixes found in review: B-Ref pages were saved through requests' Latin-1 guess (garbled accents) -> raw bytes; grid columns widened past the phone viewport -> `.two > * { min-width: 0 }`.
 - Browser-checked: Pirates send Skenes to Seattle for its top two prospects -> Pittsburgh +$56.5M, Seattle's 40-man 42/40 flagged; methodology "Major leaguers and trades" section renders from method.json; trade page and player cards fit 375 px.
 - Tests: 197 passed, 3 xfailed.
+
+### B29 aging fix (audit finding #1), 2026-10-19
+- Audit: the delta-method curve counted regression to the mean twice (Marcel shrinks the rate; season-to-season pairs, selected on a played year 1, drift down again), summing to -2.8 WAR/600 PA from 26 to 32. Backtest bases 2014-18: hitter mean projected WAR h5 -0.34 vs 0.48 actual, h6 -0.78 vs 0.39. C23 only checked h = 1, so it passed.
+- Fix (`pipeline/b29_projections.py`): age adjustment per horizon h = PT-weighted mean of (actual rate in b+h minus Marcel rate at b) by base-season age, bases 2007+ (2020 skipped). Measured against the regressed rate, fit per h, nothing summed. Rate given the player plays; flat PT unchanged (audit #2, still open).
+- C23 extended: bases 2014-2025, every h = 1..6 observed by 2026. New gate `config.C23_MAX_RATE_BIAS` = 0.25 WAR per 600 PA / 450 outs (set before the run) on PT-weighted rate bias among players who play. Result: hitters rate bias +.07/+.09/+.14/+.18/+.18/+.00 (h1-6; plain Marcel +.37 to +.57), pitchers -.03 to -.16 (Marcel +.12 to +.23). **Passes.** h = 1 r/RMSE unchanged (hitters .660 / 1.27, pitchers .630 / .852).
+- Total-WAR mean per player (reported, not gated; actual counts players who left as 0): hitters h5 .59 vs .45 actual, h6 .36 vs .40; pitchers h6 .42 vs .21. The remaining overshoot is flat playing time.
+- Downstream: median MLB surplus $8.8M -> $11.5M; 2032 mean WAR for ages 29-31 -0.66 -> +0.24. C26 informational median gap $10.2M -> $11.7M. Thin cells: age >= 37 at h >= 4 (hitter age-38 h6 adjustment -6.8, few players).
+- Tests: 197 passed, 3 xfailed.

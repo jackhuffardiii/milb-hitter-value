@@ -25,7 +25,7 @@ b19 (mERA, about 40 minutes of PyMC) is skipped automatically when its inputs an
 | Tracked contact: xwOBA-only vs blend | `config.CONTACT_XWOBA_ONLY`, `CONTACT_MIN_AAA_BIP` | `--from b21` | test_b21, test_b22 |
 | Two-way thresholds | `config.TWO_WAY_MIN_PA`, `TWO_WAY_MIN_BF` | `--from b24` | test_b24 |
 | $/WAR, inflation, minimum, arbitration shares, discount | `data/manual/dollar_params.csv` | `--from b8` | test_b8, test_b24 |
-| v3 projection: Marcel weights, regression, playing time | `config.MARCEL_WEIGHTS`, `REGRESS_PA`, `REGRESS_OUTS`, `PT_HIT`, `PT_PITCH` | `--from b29` | test_b29 (C23 in data/b29_c23.json), test_b31 |
+| v3 projection: Marcel weights, regression, playing time | `config.MARCEL_WEIGHTS`, `REGRESS_PA`, `REGRESS_OUTS`, `PT_HIT`, `PT_PITCH`, `C23_MAX_RATE_BIAS` | `--from b29` | test_b29 (C23 in data/b29_c23.json), test_b31 |
 | v3 projection horizon | `config.PROJ_FIRST`, `PROJ_YEARS` | `--from b29` | test_b29, test_b31 |
 | v3 arbitration model holdout split | `config.ARB_HOLDOUT_FIRST` | `--from b30` (re-opens its holdout) | test_b30 |
 | v3 trade rules: 40-man limit, tax line | `config.ROSTER_MAX`, `CBT_THRESHOLD_2027` | `--from b32` | test_b31 |

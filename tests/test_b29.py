@@ -26,13 +26,15 @@ def test_war_and_pt_finite():
 
 def test_aging_curves():
     a = json.load(open(D / "b29_aging.json"))
-    assert set(a) == {"hitter", "starter", "reliever"} and all(len(c) == 16 for c in a.values())
+    assert set(a) == {"hitter", "starter", "reliever"}
+    assert all(len(hc) == config.PROJ_YEARS and all(len(c) == 16 for c in hc.values()) for hc in a.values())
 
 
 def test_c23():
     c = json.load(open(D / "b29_c23.json"))
     for kind in ("hitter", "pitcher"):
         assert set(c[kind]) >= {"ours", "marcel", "naive"} and c[kind]["pass"]
+        assert sorted(c["bias_by_h"][kind]) == [str(h) for h in range(1, config.PROJ_YEARS + 1)]
         assert len(c["residual_sd_by_pt_tercile"][kind]) == 3 and len(c["residual_sd_by_pt_tercile"][f"cuts_{kind}"]) == 2
 
 

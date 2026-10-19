@@ -46,6 +46,7 @@ REGRESS_PA = 1200  # hitters: Marcel-style regression toward the league WAR rate
 REGRESS_OUTS = 450  # pitchers: same, in outs (150 IP)
 PT_HIT = (0.5, 0.1, 200)  # projected PA = .5 x PA(s) + .1 x PA(s-1) + 200 (Marcel)
 PT_PITCH = (0.5, 0.1, 75, 180)  # projected outs = .5 x outs(s) + .1 x outs(s-1) + 75 (relievers) or 180 (starters, GS share > .5)
+C23_MAX_RATE_BIAS = 0.25  # C23 gate: |projected - actual WAR rate| per 600 PA / 450 outs, players who play, at every h = 1..6 (set 2026-10-19 before the run)
 # ---- Arbitration salaries (S35, C24). rerun: --from b30.
 ARB_HOLDOUT_FIRST = 2021  # arb model is chosen on 2011-2020 grouped CV; 2021-2026 is its one holdout look
 # ---- MLB surplus and trades (S36, S39). rerun: --from b31.
