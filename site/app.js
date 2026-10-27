@@ -505,6 +505,7 @@
         w.appendChild(P("The trade simulator puts " + n(V.n_mlb) + " players on 2026 40-man rosters on the same surplus scale as the prospects. Each major leaguer's WAR is projected six seasons out: a weighted average of his last three seasons of our WAR, pulled toward league average by playing time, aged with a curve fit to our own WAR since 2006. Each season is then priced against what he will actually be paid: guaranteed salary from his contract, an arbitration estimate, or the league minimum. Options are exercised when that side benefits. Pre-arbitration and arbitration years floor at zero, because a club can non-tender a player; guaranteed money does not, because the club owes it."));
         w.appendChild(P("The arbitration estimate is a model trained on real arbitration salaries since 2011. On salaries from 2021 on, which it never saw, its median miss is " + Math.round(c24.model.median_abs_pct_err * 100) + "%, against " + Math.round(c24.baseline.median_abs_pct_err * 100) + "% for the simple 40/60/80% of market value rule the prospect values still use."));
         if (inf.fully_valued) w.appendChild(P("As a rough check, " + n(inf.fully_valued) + " two-team trades made after July 1, 2026 involved only players the model values. The median gap between the two sides was $" + inf.median_gap_m.toFixed(1) + "M, and " + Math.round(inf.share_within_fair * 100) + "% were within $" + V.fair + "M. That check peeks at the rest of the 2026 season, so the real test is trades made from here on, which are logged as they happen."));
+        w.appendChild(P("Shop a player, on the trade page, works the other way around: for each other club it tries every package of one to three of its positive-surplus players and keeps the one whose total is closest to the shopped player's value (to the nearest $1M, then the fewest players). An offer counts as even within 10% of his value, at least $1M and at most $" + V.fair + "M. It is team-neutral and ignores roster fit, so it finds trades that are fair on paper, not ones a club needs."));
         w.appendChild(P("Values are team-neutral: a contender paying for this year's wins, or a club with no room for a reliever, is not priced in yet. Treat the simulator as a draft: the projection, arbitration and option rules are defaults awaiting review."));
       }
 
@@ -531,7 +532,7 @@
       var byTeam = {}, tName = {};
       T.teams.forEach(function (t) { byTeam[t.code] = []; tName[t.code] = t; });
       T.assets.forEach(function (a) { if (byTeam[a.team]) byTeam[a.team].push(a); });
-      var picked = { A: {}, B: {} }, team = { A: T.teams[0].code, B: T.teams[1].code };
+      var picked = { A: {}, B: {} }, team = { A: T.teams[0].code, B: T.teams[1].code }, setSide = {};
       w.appendChild(h("h1", { style: "margin-top:24px", text: "Trade simulator (beta)" }));
       w.appendChild(h("p", { class: "lede" }, "Pick two clubs and the players each sends. Every asset is in surplus dollars on one scale: prospects from the expected surplus on the leaderboard, major leaguers from projected WAR minus what their contract or arbitration will pay them. Values are team-neutral: a contender's need is not priced in. Beta: the major league aging, playing-time and arbitration assumptions are still under review. ",
         h("a", { href: "method.html#trades", text: "How trades are valued." })));
@@ -563,6 +564,11 @@
         }
         sel.addEventListener("change", function () { team[k] = sel.value; picked[k] = {}; draw(); result(); });
         q.addEventListener("input", draw);
+        setSide[k] = function (code, assets) {
+          sel.value = team[k] = code; q.value = ""; picked[k] = {};
+          assets.forEach(function (a) { picked[k][a.id] = a; });
+          draw();
+        };
         box.appendChild(h("h2", { text: k === "A" ? "Club A sends" : "Club B sends" }));
         box.appendChild(h("div", { class: "controls" }, h("label", { for: "team-" + k }, "Club", sel), q));
         box.appendChild(list);
@@ -596,6 +602,59 @@
       }
       cols.appendChild(side("A")); cols.appendChild(side("B"));
       result();
+      w.insertBefore(shop(), summary);
+
+      /* shop a player: each other club's closest-to-even package of 1-3 assets (site/shop.js) */
+      function shop() {
+        var box = h("section", { "aria-labelledby": "shop-h" });
+        var club = h("select", { id: "shop-club" }, T.teams.map(function (t) { return h("option", { value: t.code, text: t.name }); }));
+        var who = h("select", { id: "shop-player" });
+        var out = h("div", { "aria-live": "polite" });
+        function fillPlayers() {
+          who.textContent = "";
+          byTeam[club.value].filter(function (a) { return a.v > 0; }).sort(function (x, y) { return y.v - x.v; }).forEach(function (a) {
+            who.appendChild(h("option", { value: a.id, text: a.name + " (" + kindTag(a) + ", " + usd(a.v) + ")" }));
+          });
+          run();
+        }
+        function run() {
+          var p = byTeam[club.value].filter(function (a) { return String(a.id) === who.value; })[0];
+          out.textContent = "";
+          if (!p) { out.appendChild(h("p", { class: "muted", text: "This club has no positive-value players to shop." })); return; }
+          var offers = T.teams.filter(function (t) { return t.code !== p.team; }).map(function (t) {
+            var b = shopTeam(p.v, byTeam[t.code], T.fair);
+            return b && b.even ? { t: t, b: b } : null;
+          }).filter(Boolean).sort(function (x, y) { return Math.abs(x.b.gap) - Math.abs(y.b.gap); });
+          var tol = shopTol(p.v, T.fair);
+          out.appendChild(h("p", { class: "explain", text: offers.length + " of " + (T.teams.length - 1) + " clubs can send an even package for " + p.name + " (" + usd(p.v) + "): one to three players whose surplus totals within " + usd(tol) + " of his. Closest first." }));
+          if (!offers.length) return;
+          var n40 = function (xs) { return xs.filter(function (a) { return a.on40; }).length; };
+          out.appendChild(h("div", { class: "tbl-wrap", role: "region", tabindex: "0", "aria-label": "Offers" }, h("table", null,
+            h("thead", null, h("tr", null, ["Club", "Sends", "Value", "Gap", "40-man", ""].map(function (x, i) { return h("th", { scope: "col", class: i >= 2 && i <= 4 ? "n" : null, text: x }); }))),
+            h("tbody", null, offers.map(function (o) {
+              var net40 = n40(o.b.assets) - (p.on40 ? 1 : 0); // 40-man spots the shopping club must clear (the partner frees as many)
+              var load = h("button", { class: "btn", type: "button", text: "Load", "aria-label": "Load the " + o.t.name + " offer into the simulator" });
+              load.addEventListener("click", function () {
+                setSide.A(p.team, [p]); setSide.B(o.t.code, o.b.assets); result();
+                summary.scrollIntoView({ behavior: "smooth", block: "start" });
+              });
+              return h("tr", null, h("td", { text: o.t.name }),
+                h("td", { style: "white-space:normal;min-width:220px", text: o.b.assets.map(function (a) { return a.name + " (" + usd(a.v) + ")"; }).join(", ") }),
+                h("td", { class: "n", text: usd(o.b.total) }),
+                h("td", { class: "n", text: (o.b.gap > 0 ? "+" : "") + usd(o.b.gap) }),
+                h("td", { class: "n", text: net40 ? (net40 > 0 ? "+" : "−") + Math.abs(net40) + " " + p.team : "even" }),
+                h("td", null, load));
+            })))));
+        }
+        club.addEventListener("change", fillPlayers);
+        who.addEventListener("change", run);
+        box.appendChild(h("h2", { id: "shop-h", text: "Shop a player" }));
+        box.appendChild(h("p", { class: "lede", text: "Pick a player to shop. For every other club, the finder tries each package of one to three of its players with positive surplus and keeps the one closest in value, so both sides come out about even. Gap is what the shopping club gains; 40-man is the change in its 40-man count. Load puts an offer in the simulator below." }));
+        box.appendChild(h("div", { class: "controls" }, h("label", { for: "shop-club" }, "Club", club), h("label", { for: "shop-player" }, "Player", who)));
+        box.appendChild(out);
+        fillPlayers();
+        return box;
+      }
     }).catch(function (e) { chrome("trade"); fail(e.message); });
   }
 
