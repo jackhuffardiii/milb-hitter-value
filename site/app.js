@@ -532,8 +532,8 @@
       T.teams.forEach(function (t) { byTeam[t.code] = []; tName[t.code] = t; });
       T.assets.forEach(function (a) { if (byTeam[a.team]) byTeam[a.team].push(a); });
       var picked = { A: {}, B: {} }, team = { A: T.teams[0].code, B: T.teams[1].code };
-      w.appendChild(h("h1", { style: "margin-top:24px", text: "Trade simulator" }));
-      w.appendChild(h("p", { class: "lede" }, "Pick two clubs and the players each sends. Every asset is in surplus dollars on one scale: prospects from the expected surplus on the leaderboard, major leaguers from projected WAR minus what their contract or arbitration will pay them. Values are team-neutral: a contender's need is not priced in. ",
+      w.appendChild(h("h1", { style: "margin-top:24px", text: "Trade simulator (beta)" }));
+      w.appendChild(h("p", { class: "lede" }, "Pick two clubs and the players each sends. Every asset is in surplus dollars on one scale: prospects from the expected surplus on the leaderboard, major leaguers from projected WAR minus what their contract or arbitration will pay them. Values are team-neutral: a contender's need is not priced in. Beta: the major league aging, playing-time and arbitration assumptions are still under review. ",
         h("a", { href: "method.html#trades", text: "How trades are valued." })));
       var summary = h("section", { class: "answer", "aria-live": "polite", "aria-label": "Trade result" });
       var cols = h("div", { class: "two" });
