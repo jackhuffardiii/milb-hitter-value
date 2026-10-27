@@ -10,9 +10,11 @@ import numpy as np
 import pandas as pd
 import requests
 
+from pipeline import config
 from pipeline.common import DATA, RAW, api_get, pmap
 
 YEARS = range(2005, 2027)
+POS_WAR_PER_2430 = config.POS_WAR_PER_2430  # S17: position-player WAR per 2,430 MLB games (Baseball-Reference split)
 EVENTS = ["1B", "2B", "3B", "HR", "uBB_HBP", "out"]
 POS_RUNS = {"C": 12.5, "SS": 7.5, "2B": 2.5, "3B": 2.5, "CF": 2.5, "LF": -7.5, "RF": -7.5, "1B": -12.5,
             "DH": -17.5, "OF": -2.5}  # OF (generic) never occurs in the data; kept for safety
@@ -55,13 +57,13 @@ def linear_weights():
     hit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "hitting"), YEARS) for r in rs])
     pit = pd.DataFrame([r for rs in pmap(lambda y: _team_totals(y, "pitching"), YEARS) for r in rs])
     num = ["atBats", "hits", "doubles", "triples", "homeRuns", "baseOnBalls", "intentionalWalks", "hitByPitch",
-           "sacFlies", "sacBunts", "runs", "plateAppearances", "stolenBases", "caughtStealing", "groundIntoDoublePlay"]
+           "sacFlies", "sacBunts", "runs", "plateAppearances", "stolenBases", "caughtStealing", "groundIntoDoublePlay", "gamesPlayed"]
     hit = hit[["season", "team_id"] + num].astype({c: float for c in num})
-    hit.columns = ["season", "team_id", "AB", "H", "2B", "3B", "HR", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP"]
+    hit.columns = ["season", "team_id", "AB", "H", "2B", "3B", "HR", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP", "G"]
     pit["IP"] = pit["inningsPitched"].map(_ip)
     ev = _events(hit)
     hit = hit.join(ev[["1B", "uBB_HBP", "out"]])
-    lg = hit.groupby("season")[["AB", "H", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP"] + EVENTS].sum()
+    lg = hit.groupby("season")[["AB", "H", "BB", "IBB", "HBP", "SF", "SH", "R", "PA", "SB", "CS", "GIDP", "G"] + EVENTS].sum()
     lg["IP"] = pit.groupby("season").IP.sum()
     rows = []
     for s, r in lg.iterrows():
@@ -80,7 +82,7 @@ def linear_weights():
                      "lg_GIDP_per_PA": r.GIDP / r.PA, **{f"rv_{e}": v for e, v in zip(EVENTS, rv)},
                      **{f"w_{e}": scale * v for e, v in zip(EVENTS[:5], w)},
                      "wOBA_scale": scale, "lg_wOBA": obp, "lg_R_per_PA": r.R / r.PA,
-                     "RPW": 9 * (r.R / r.IP) * 1.5 + 3})
+                     "RPW": 9 * (r.R / r.IP) * 1.5 + 3, "games": r.G / 2})
     return pd.DataFrame(rows)
 
 
@@ -119,7 +121,6 @@ def war():
     p["wOBA"] = p.w_sum * p.wOBA_scale / p.den
     p["bat_runs"] = (p.wOBA - p.lg_wOBA) / p.wOBA_scale * p.PA
     p["park_runs"] = -(p.ppf_pa / p.PA - 1) * p.lg_R_per_PA * p.PA
-    p["repl_runs"] = 20 * p.PA / 600
     sb = ms.groupby(["player_id", "season"])[["SB", "CS", "1B", "BB", "HBP", "IBB"]].sum()
     p = p.join(sb, on=["player_id", "season"]).merge(_gidp(), on=["player_id", "season"], how="left")
     p = p.merge(lw[["season", "runCS", "lg_wSB", "lg_GIDP_per_PA"]], on="season")
@@ -146,20 +147,26 @@ def war():
     dh = (p.G - p.f_np).clip(lower=0)
     p["pos_runs"] = p.pos_f + POS_RUNS["DH"] * dh / 162
     p["primary_pos"] = p.primary_pos.fillna("DH")
+    # S17: replacement runs per PA solved per season so non-pitcher WAR sums to 590 x games / 2430 (v1: fixed 20 per 600 PA)
+    p = p.merge(lw[["season", "games"]], on="season")
+    p["non_repl"] = p.bat_runs + p.park_runs + p.bsr_runs + p.fld_runs + p.pos_runs
+    s = p.groupby("season").agg(nr=("non_repl", "sum"), pa=("PA", "sum"), rpw=("RPW", "first"), games=("games", "first"))
+    p["repl_per_pa"] = p.season.map((POS_WAR_PER_2430 * s.games / 2430 * s.rpw - s.nr) / s.pa)
+    p["repl_runs"] = p.repl_per_pa * p.PA
     p["owar"] = (p.bat_runs + p.park_runs + p.bsr_runs + p.fld_runs + p.pos_runs + p.repl_runs) / p.RPW
     out = p[["player_id", "season", "PA", "wOBA", "lg_wOBA", "wOBA_scale", "bat_runs", "park_runs", "wSB", "gidp_runs", "bsr_runs",
-             "fld_runs", "pos_runs", "repl_runs", "RPW", "owar", "primary_pos"]]
+             "fld_runs", "pos_runs", "repl_runs", "repl_per_pa", "RPW", "owar", "primary_pos"]]
     out.to_parquet(DATA / "mlb_war.parquet")
     return out
 
 
-def target(w):
-    pl = pd.read_parquet(DATA / "players.parquet")
+def target(w, col="owar", players_file="players.parquet", out_file="war_target.parquet"):
+    pl = pd.read_parquet(DATA / players_file)
     pl = pl[pl.mlb_debut_date.notna()][["player_id", "mlb_debut_date"]]
     pl["debut_season"] = pl.mlb_debut_date.dt.year
     m = w.merge(pl, on="player_id")
     m = m[(m.season >= m.debut_season) & (m.season <= m.debut_season + 5)]
-    a = m.groupby("player_id").agg(war_6yr=("owar", "sum"), n_seasons_observed=("season", "nunique"))
+    a = m.groupby("player_id").agg(war_6yr=(col, "sum"), n_seasons_observed=("season", "nunique"))
     t = pl.drop(columns="mlb_debut_date").merge(a, on="player_id", how="left")
     # debut with no hitting PA in the window (pinch-runner/defensive sub, pitcher, or a pre-2005 debut whose window
     # predates the data; the latter are flagged pre2005 and excluded from training) produced zero hitting value
@@ -167,7 +174,7 @@ def target(w):
     t["n_seasons_observed"] = t.n_seasons_observed.fillna(0).astype(int)
     t["censored"] = t.debut_season + 5 > 2026
     t["pre2005"] = t.debut_season < 2005
-    t.to_parquet(DATA / "war_target.parquet")
+    t.to_parquet(DATA / out_file)
     return t
 
 

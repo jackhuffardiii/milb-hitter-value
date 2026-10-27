@@ -8,3 +8,4 @@ lightgbm==4.7.0
 shap==0.52.0
 joblib==1.6.0
 scipy==1.18.1
+pymc==6.3.2

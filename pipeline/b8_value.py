@@ -29,15 +29,15 @@ def load_params():
             "disc": p.discount_rate}
 
 
-def war_profile():
-    """Share of war_6yr realised in control year 1..6: mean owar in year k / mean war_6yr, over reached non-censored
-    debuts 2005-2017 (missing seasons count 0), normalised to sum 1."""
-    wt = pd.read_parquet(DATA / "war_target.parquet")
+def war_profile(target="war_target.parquet", war="mlb_war.parquet", col="owar"):
+    """Share of war_6yr realised in control year 1..6: mean WAR in year k / mean war_6yr, over reached non-censored
+    debuts 2005-2017 (missing seasons count 0), normalised to sum 1. Pitchers (B24): pitch_war_target / mlb_pitch_war / pwar."""
+    wt = pd.read_parquet(DATA / target)
     wt = wt[(~wt.censored) & (~wt.pre2005) & wt.debut_season.between(2005, 2017)]
-    m = pd.read_parquet(DATA / "mlb_war.parquet")[["player_id", "season", "owar"]].merge(wt[["player_id", "debut_season"]])
+    m = pd.read_parquet(DATA / war)[["player_id", "season", col]].merge(wt[["player_id", "debut_season"]])
     m["y"] = m.season - m.debut_season + 1
     m = m[m.y.between(1, 6)]
-    mean_y = m.groupby("y").owar.sum().reindex(range(1, 7), fill_value=0) / len(wt)
+    mean_y = m.groupby("y")[col].sum().reindex(range(1, 7), fill_value=0) / len(wt)
     return pd.DataFrame({"control_year": range(1, 7), "mean_owar": mean_y.to_numpy(), "share": (mean_y / mean_y.sum()).to_numpy(),
                          "n_players": len(wt)})
 
@@ -57,20 +57,20 @@ def contract_surplus(war, debut_year, snapshot, share, prm):
     return out
 
 
-def _z(pred):
-    """(n, 199) standardized residual quantiles of each row's B6 model (A16)."""
+def _z(pred, prefix=""):
+    """(n, 199) standardized residual quantiles of each row's B6 model (A16); prefix "pitch_" loads the B22 models."""
     z = np.zeros((len(pred), 199))
     for (fit, group), idx in pred.groupby(["fit", "group"]).groups.items():
-        z[pred.index.get_indexer(idx)] = joblib.load(MODELS / f"{group}_{fit}.joblib")["z"]
+        z[pred.index.get_indexer(idx)] = joblib.load(MODELS / f"{prefix}{group}_{fit}.joblib")["z"]
     return z
 
 
-def value(pred, prof, prm, war_col="war_mean"):
+def value(pred, prof, prm, war_col="war_mean", prefix=""):
     pred = pred.reset_index(drop=True)
     v = pred[["player_id", "season", "fit", "group", "low_confidence", "debuted", "p_mlb", "war_mean", "war_q10", "war_q50",
               "war_q90", "eta_mean"]].copy()
     share, snap = np.asarray(prof.share), v.season.to_numpy()
-    draws = pred[war_col].to_numpy()[:, None] + pred.war_scale.to_numpy()[:, None] * _z(pred)
+    draws = pred[war_col].to_numpy()[:, None] + pred.war_scale.to_numpy()[:, None] * _z(pred, prefix)
     pdeb = pred[[f"p_debut_t{t}" for t in range(1, T_MAX + 1)]].to_numpy()
     deb = v.debuted.to_numpy(bool)
     per_draw = np.zeros(draws.shape)  # E over arrival, per draw, unconditional (sums P(debut) x surplus)
@@ -127,8 +127,8 @@ def family(feat):
     return "Other"
 
 
-def full_contrib(fit, group, rows):
-    mod = joblib.load(MODELS / f"{group}_{fit}.joblib")
+def full_contrib(fit, group, rows, prefix=""):
+    mod = joblib.load(MODELS / f"{prefix}{group}_{fit}.joblib")
     return pd.concat([drivers(mod, rows, t, top=999) for t in ("p_mlb", "war")], ignore_index=True)
 
 
@@ -161,12 +161,15 @@ def _phrases(r, ref):
     return out
 
 
-def grouped_drivers(pred, feats):
+def grouped_drivers(pred, feats, prefix="", fam=None, phrases=None, dir_feats=None, expect=None):
+    """Hitter defaults; B24 passes the pitcher family map, phrases, direction features and model prefix."""
+    fam, phrases = fam or family, phrases or _phrases
+    dir_feats, expect = dir_feats or DIR_FEATS, expect or EXPECT
     out = []
     for (fit, group), pr in pred.groupby(["fit", "group"]):
         rows = feats[feats.group == group].merge(pr[["player_id", "season"]], on=["player_id", "season"]).reset_index(drop=True)
-        c = full_contrib(fit, group, rows)
-        c["family"] = c.feature.map(family)
+        c = full_contrib(fit, group, rows, prefix)
+        c["family"] = c.feature.map(fam)
         if group == "stat":
             assert (c.family != "Other").all(), c[c.family == "Other"].feature.unique()
         total = c.groupby(["player_id", "season", "target"]).contribution.sum()
@@ -175,12 +178,12 @@ def grouped_drivers(pred, feats):
         tr = feats[(feats.group == group) & (feats.split == "train_era")]
         if fit == "backtest":
             tr = tr[tr.season <= 2012]
-        ref = tr[[c for c, _, _ in DIR_FEATS.values()]].mean()
-        ph = {(r.player_id, r.season): _phrases(r, ref) for _, r in rows.iterrows()}
+        ref = tr[[c for c, _, _ in dir_feats.values()]].mean()
+        ph = {(r.player_id, r.season): phrases(r, ref) for _, r in rows.iterrows()}
         pd_ = [ph[(p, s)].get(f, (f, 0)) for p, s, f in zip(g.player_id, g.season, g.family)]
         g["phrase"], g["input_dir"] = [x[0] for x in pd_], np.array([x[1] for x in pd_])
         # keep a direction only where it agrees with the family's net contribution; otherwise say so and imply none
-        exp = g.family.map(EXPECT).fillna(0).to_numpy()
+        exp = g.family.map(expect).fillna(0).to_numpy()
         bad = (g.input_dir.to_numpy() * exp * g.contribution.to_numpy()) < 0
         g["suppressed"] = bad
         g.loc[bad, "phrase"] = g.loc[bad, "phrase"] + NOTE

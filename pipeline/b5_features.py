@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 
 from .b2_war import POS_RUNS
+from . import config
 from .common import DATA
 
+W0, W1 = config.BLEND_WEIGHTS
 LVL = {"rk": 0, "a-": 0.5, "a": 1, "a+": 2, "aa": 3, "aaa": 4}
 POS9 = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH"]
 RATES = ["K", "BB", "ISO", "BABIP"]
@@ -36,7 +38,7 @@ def _blend(A, cols, w):
     P = A[["player_id", "season", w] + cols].assign(season=A.season + 1)
     M = A.merge(P, on=["player_id", "season"], how="left", suffixes=("", "_p"))
     for c in cols:
-        w0, w1 = 3 * M[w].where(M[c].notna(), 0), 2 * M[w + "_p"].where(M[c + "_p"].notna(), 0)
+        w0, w1 = W0 * M[w].where(M[c].notna(), 0), W1 * M[w + "_p"].where(M[c + "_p"].notna(), 0)
         M["blend_" + c] = (M[c].fillna(0) * w0 + M[c + "_p"].fillna(0) * w1) / (w0 + w1).where(lambda x: x > 0)
     return M[["player_id", "season"] + ["blend_" + c for c in cols]]
 
@@ -131,6 +133,31 @@ def build_transition(snap, fld, players, cutoff=2017):
     return out
 
 
+def draft_features(snap, hs=False):
+    """Draft columns from the latest record with draft_year <= s (a player drafted again later keeps his earlier record
+    before then); international = no record (1990+), Q17. hs=True (B20) also adds hs_draftee: True for a high-school
+    draftee, False for college/JC, NaN without a record or any school info."""
+    d = pd.read_parquet(DATA / "draft.parquet").dropna(subset=["player_id"])
+    d = d.assign(player_id=d.player_id.astype(int), round_num=pd.to_numeric(d["round"], errors="coerce"))
+    keep = ["player_id", "draft_year", "round_num", "pick_overall", "signing_bonus"]
+    if hs:  # school_class is filled only from ~2005; older rows carry "... HS (City, ST)" in the school text
+        cls, sch = d.school_class.fillna(""), d.school.fillna("")
+        d["hs_draftee"] = np.select([cls.str.startswith("HS"), cls != "", sch.str.contains(r"\bHS\b|High School"), sch != ""],
+                                    [1.0, 0.0, 1.0, 0.0], np.nan)
+        keep.append("hs_draftee")
+    d = d.sort_values(["player_id", "draft_year"])[keep]
+    dd = snap[["player_id", "season"]].merge(d.rename(columns={"draft_year": "dy"}), on="player_id")
+    dd = dd[dd.dy <= dd.season].sort_values("dy").groupby(["player_id", "season"]).tail(1)
+    snap = snap.merge(dd, on=["player_id", "season"], how="left")
+    ok = snap.dy.notna()
+    snap["international"] = ~ok  # means "no draft record (1990+) on or before s": international or undrafted (Q17)
+    snap["draft_year"] = snap.dy.where(ok)
+    snap["years_since_draft"] = snap.season - snap.draft_year
+    for c in ["round_num", "pick_overall", "signing_bonus"]:
+        snap[c] = snap[c].where(ok)
+    return snap.drop(columns="dy")
+
+
 def main():
     S = pd.read_parquet(DATA / "milb_player_seasons.parquet")
     pl = pd.read_parquet(DATA / "players.parquet")
@@ -176,7 +203,7 @@ def main():
     snap = snap[snap.mlb_ab_thru.fillna(0) < 130].drop(columns="mlb_ab_thru")
     snap = snap[snap.season.isin(YEARS)]
 
-    # stat group (Q7): A..AAA PA over s and s-1 >= 150 and complete reg_ for s
+    # stat group (Q7): A..AAA PA over s and s-1 >= config.STAT_MIN_PA and complete reg_ for s
     aaa = S[S.lv >= 1].groupby(["player_id", "season"]).PA.sum()
     prev = aaa.rename("pa_prev").reset_index().assign(season=lambda d: d.season + 1)
     snap = snap.merge(aaa.rename("pa_cur").reset_index(), on=["player_id", "season"], how="left")
@@ -186,7 +213,7 @@ def main():
     regc = [f"reg_{c}" for c in RATES]
     mc = mle[["player_id", "season", "PA"] + regc].rename(columns={"PA": "mle_PA"})
     snap = snap.merge(mc, on=["player_id", "season"], how="left")
-    snap["group"] = np.where((snap.pa_two >= 150) & snap[regc].notna().all(axis=1), "stat", "prior")
+    snap["group"] = np.where((snap.pa_two >= config.STAT_MIN_PA) & snap[regc].notna().all(axis=1), "stat", "prior")
     stat = snap.group == "stat"
     snap.loc[~stat, regc] = np.nan
     # Marcel blend s (w=3) + s-1 (w=2), weighted by PA*w, and trajectory
@@ -233,22 +260,8 @@ def main():
     tm = pd.concat(tms, ignore_index=True)
     tm.to_parquet(DATA / "position_transition.parquet", index=False)
 
-    # draft features (latest record on or before s; international = none)
-    d = pd.read_parquet(DATA / "draft.parquet").dropna(subset=["player_id"])
-    d = d.assign(player_id=d.player_id.astype(int), round_num=pd.to_numeric(d["round"], errors="coerce"))
-    d = d.sort_values(["player_id", "draft_year"])[["player_id", "draft_year", "round_num", "pick_overall",
-                                                    "signing_bonus"]]
-    # latest draft record with draft_year <= s (a player drafted again later keeps his earlier record before then)
-    dd = snap[["player_id", "season"]].merge(d.rename(columns={"draft_year": "dy"}), on="player_id")
-    dd = dd[dd.dy <= dd.season].sort_values("dy").groupby(["player_id", "season"]).tail(1)
-    snap = snap.merge(dd, on=["player_id", "season"], how="left")
-    ok = snap.dy.notna()
-    snap["international"] = ~ok  # means "no draft record (1990+) on or before s": international or undrafted (Q17)
-    snap["draft_year"] = snap.dy.where(ok)
-    snap["years_since_draft"] = snap.season - snap.draft_year
-    for c in ["round_num", "pick_overall", "signing_bonus"]:
-        snap[c] = snap[c].where(ok)
-    snap = snap.drop(columns=["dy", "mlb_debut_date"])
+    snap = draft_features(snap)
+    snap = snap.drop(columns=["mlb_debut_date"])
     snap["split"] = np.select([snap.season <= 2017, snap.season <= 2025], ["train_era", "censored"], "score")
     snap = snap.sort_values(["season", "player_id"]).reset_index(drop=True)
     snap.to_parquet(DATA / "features.parquet", index=False)

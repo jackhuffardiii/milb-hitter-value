@@ -121,6 +121,7 @@ button.btn:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surfa
 .drv .fam { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
 .drv .ph { font-size: 13px; color: var(--ink-2); }
 .two { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.two > * { min-width: 0; } /* let wide tables scroll inside their wrapper instead of widening the column */
 @media (min-width: 820px) { .two { grid-template-columns: 1fr 1fr; } }
 .legend { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; }
 .sw { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }

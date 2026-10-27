@@ -32,6 +32,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from pipeline.b5_features import S15_KEPT
+from pipeline import config
 from pipeline.common import DATA
 
 warnings.filterwarnings("ignore", message="Skipping features without any observed values")  # log_bonus is all-NaN pre-2017
@@ -48,6 +49,7 @@ LGB = dict(num_leaves=15, learning_rate=0.03, min_child_samples=50, random_state
 LOG_EXTRA = ["games_at_current_level", "ascent_pace"]  # skewed S15 counts, log1p like LOG_COLS (also used by B12)
 Z_GRID = np.linspace(0.005, 0.995, 199)  # stored standardized-residual quantiles (A16), sampled by B8
 SPREAD_FEATS = ["age", "age_vs_level", "level_num", "exp_pos_runs", "p_C", "pro_years"]  # variance-model inputs (stat)
+WAR_TARGET = "war_target.parquet"
 
 
 def for_fit(df, fit):
@@ -83,7 +85,8 @@ def prior_X(df):
     return X.reset_index(drop=True)
 
 
-XFN = {"stat": _X, "prior": prior_X}
+XFN = {"stat": _X, "prior": prior_X}  # B22 registers its pitcher kinds here (and in SPREAD)
+SPREAD = {"stat": SPREAD_FEATS}  # kinds without an entry use their full design matrix as variance-model inputs
 
 
 def _hx(X, t):
@@ -291,28 +294,28 @@ def select_spread(F, r, groups, info_df):
 def _spread_F(df, kind, pred):
     """Variance-model inputs: player features plus the WAR mean prediction (OOF in training), since residual spread grows
     with the predicted level (right-skewed WAR)."""
-    F = df[SPREAD_FEATS].astype(float).reset_index(drop=True) if kind == "stat" else prior_X(df)
+    F = df[SPREAD[kind]].astype(float).reset_index(drop=True) if kind in SPREAD else XFN[kind](df)
     return F.assign(pred=np.asarray(pred, float))
 
 
 # ---------- training masks ----------
-def _war_mask(df, cutoff):
-    wt = pd.read_parquet(DATA / "war_target.parquet")[["player_id", "censored", "pre2005"]]
+def _war_mask(df, cutoff, war_target=WAR_TARGET):
+    wt = pd.read_parquet(DATA / war_target)[["player_id", "censored", "pre2005"]]
     d = df[["player_id"]].merge(wt, on="player_id", how="left")
     return ((~df.debuted.to_numpy(bool)) & df.reached_mlb.to_numpy(bool) & (d.censored == False).to_numpy()  # noqa: E712
             & (d.pre2005 == False).to_numpy() & (df.season.to_numpy() <= cutoff))  # noqa: E712
 
 
 # ---------- selection (s<=2012 CV only) ----------
-def select_stat(train):
-    X, g = _X(train), train.player_id.to_numpy()
+def select_stat(train, kind="stat", war_target=WAR_TARGET):
+    X, g = XFN[kind](train), train.player_id.to_numpy()
     H, yh, _, gh = person_period(train, X)
     lin = log_loss(yh, np.clip(_lin_cv("p_mlb", H, yh, gh), 1e-6, 1 - 1e-6))
     oof, n = _lgb_cv("p_mlb", H, yh, gh)
     gbm = log_loss(yh, np.clip(oof, 1e-6, 1 - 1e-6))
     cfg = {"hazard": {"chosen": "lightgbm" if gbm < lin else "linear", "n": n}}
     cv = {"hazard": {"linear": lin, "lightgbm": gbm, "n_person_periods": int(len(yh)), "lgb_n_estimators": n}}
-    m = _war_mask(train, 2012)
+    m = _war_mask(train, config.SELECT_CUTOFF, war_target)
     Xm, ym, gm = X[m].reset_index(drop=True), train.war_6yr.to_numpy()[m], g[m]
     lo = _lin_cv("war", Xm, ym, gm)
     go, nw = _lgb_cv("war", Xm, ym, gm)
@@ -326,7 +329,7 @@ PRIOR_CFG = {"hazard": {"chosen": "linear", "n": 0}, "war": {"chosen": "linear",
 
 
 # ---------- fit / predict ----------
-def fit(train, cfg, kind, war_cutoff, spread_kind=None):
+def fit(train, cfg, kind, war_cutoff, spread_kind=None, war_target=WAR_TARGET):
     """Hazard on all not-debuted rows of `train` (observed periods), WAR on s<=war_cutoff, spread model (A16)."""
     X = XFN[kind](train)
     mod = {"kind": kind, "cfg": cfg, "cols": list(X.columns)}
@@ -334,7 +337,7 @@ def fit(train, cfg, kind, war_cutoff, spread_kind=None):
     H, yh, _, _ = person_period(train, X)
     mod["hazard"] = mk_h().fit(H, yh)
     mod["recal"], mod["recal_info"] = hazard_cv_check(mk_h, train, X)
-    m = _war_mask(train, war_cutoff)
+    m = _war_mask(train, war_cutoff, war_target)
     Xm, ym, gm = X[m].reset_index(drop=True), train.war_6yr.to_numpy()[m], train.player_id.to_numpy()[m]
     mk_w = _make("war", cfg["war"]["chosen"], cfg["war"]["n"])
     mod["war"] = mk_w().fit(Xm, ym)
@@ -372,7 +375,7 @@ def predict(mod, df, calibrate=True):
         out[f"war_q{int(a * 100)}"] = out.war_mean + out.war_scale * _zval(mod["z"], a)
     out["ev_war"] = out.p_mlb * out.war_mean
     out["debuted"] = deb
-    out["low_confidence"] = mod["kind"] == "prior"
+    out["low_confidence"] = mod["kind"].endswith("prior")
     return out
 
 
@@ -451,13 +454,14 @@ def main():
     MODELS.mkdir(exist_ok=True)
     f = pd.read_parquet(DATA / "features.parquet")
     st, pr = f[f.group == "stat"], f[f.group == "prior"]
-    cfg, cv = select_stat(for_fit(st[st.season <= 2012], "backtest"))
+    S, F, L = config.SELECT_CUTOFF, config.FIT2017_CUTOFF, config.FINAL_CUTOFF
+    cfg, cv = select_stat(for_fit(st[st.season <= S], "backtest"))
     print("selection (s<=2012 CV):", json.dumps(cv, default=float))
     fits = {  # name: (train rows, war cutoff, predict rows, driver rows)
-        "backtest": (lambda d: for_fit(d[d.season <= 2012], "backtest"), 2012,
-                     lambda d: for_fit(d[d.season.between(2013, 2017)], "backtest"), True),
-        "fit2017": (lambda d: d[d.season <= 2017], 2015, lambda d: d[d.season.between(2018, 2019)], False),
-        "final": (lambda d: d[d.season <= 2025], 2015, lambda d: d[d.season >= 2018], True),
+        "backtest": (lambda d: for_fit(d[d.season <= S], "backtest"), S,
+                     lambda d: for_fit(d[d.season.between(S + 1, F)], "backtest"), True),
+        "fit2017": (lambda d: d[d.season <= F], config.WAR_CUTOFF_HIT, lambda d: d[d.season.between(F + 1, F + 2)], False),
+        "final": (lambda d: d[d.season <= L], config.WAR_CUTOFF_HIT, lambda d: d[d.season >= F + 1], True),
     }
     preds, drv = [], []
     metrics = {"cv_stat": cv, "chosen_stat": {k: v["chosen"] for k, v in cfg.items()}}

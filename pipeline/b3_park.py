@@ -141,12 +141,12 @@ def build():
     return d, ks
 
 
-def player_park(pf):
-    """Per-stint factor (1+pf)/2 (about half of games at home), PA-weighted to player x season x level x league."""
-    st = pd.read_parquet(DATA / "milb_stints.parquet")
+def player_park(pf, stints_file="milb_stints.parquet", wcol="PA"):
+    """Per-stint factor (1+pf)/2 (about half of games at home), wcol-weighted (PA; BF for pitchers) to player x season x level x league."""
+    st = pd.read_parquet(DATA / stints_file)
     st = st.merge(pf[pf.sport == "milb"][["season", "team_id"] + [f"pf_{c}" for c in COMPS]], on=["season", "team_id"], how="left")
     has = st.pf_HR.notna()
-    st["pa"] = st.PA.fillna(0)
+    st["pa"] = st[wcol].fillna(0)
     st["w"] = (st.pa + 1e-6).where(has, 0)  # tiny floor so zero-PA stints still get a factor
     st["pa_has"] = st.pa.where(has, 0)
     for c in COMPS:

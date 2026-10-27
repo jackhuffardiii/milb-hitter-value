@@ -76,15 +76,18 @@ def hand_splits(seasons):
     return d
 
 
-def savant_family(season, fam):
-    """Savant minors batter rows for one pitch family and season, grouped by player; cached CSV."""
-    f = SAVANT_SPLITS / f"{season}_{fam}.csv"
+def savant_family(season, fam, player_type="batter"):
+    """Savant minors rows (batter or pitcher) for one pitch family (or a single pitch code, e.g. "FF") and season,
+    grouped by player; cached CSV."""
+    f = SAVANT_SPLITS / (f"{season}_{fam}.csv" if player_type == "batter" else f"p_{season}_{fam}.csv")
     if not f.exists():
-        url = (f"https://baseballsavant.mlb.com/statcast-search-minors/csv?all=true&hfPT={PITCH_FAMILY[fam].replace('|', '%7C')}%7C"
-               f"&hfGT=R%7C&hfSea={season}%7C&player_type=batter&group_by=name&minors=true&min_pitches=0&min_results=0&min_pas=0"
+        url = (f"https://baseballsavant.mlb.com/statcast-search-minors/csv?all=true&hfPT={PITCH_FAMILY.get(fam, fam).replace('|', '%7C')}%7C"
+               f"&hfGT=R%7C&hfSea={season}%7C&player_type={player_type}&group_by=name&minors=true&min_pitches=0&min_results=0&min_pas=0"
                f"&sort_col=pitches&sort_order=desc")
         SAVANT_SPLITS.mkdir(parents=True, exist_ok=True)
         f.write_bytes(_get(url).content)
+    if not f.read_text(encoding="utf-8-sig").strip():  # Savant returns a BOM-only body when nobody threw the pitch that season (e.g. 2021 CS)
+        return pd.DataFrame().assign(season=season, family=fam)
     d = pd.read_csv(f, encoding="utf-8-sig")
     assert len(d) < 25000, f"Savant row cap hit on {f.name}"
     return d.assign(season=season, family=fam)

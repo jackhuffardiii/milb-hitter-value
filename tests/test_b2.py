@@ -76,3 +76,8 @@ def test_baseruns_weight_ratios():  # A14: within 10% of standard wOBA ratios (2
     for e, want in {"2B": 1.42, "3B": 1.80, "HR": 2.30}.items():
         assert ((rel(e) / want - 1).abs() < 0.10).all(), e
     assert LW.wOBA_scale.between(1.1, 1.35).all()
+
+
+def test_c13_position_player_war_anchor():  # S17: 590 WAR per 2,430 games every season, within 1 WAR
+    games = LW.set_index("season").games
+    assert (W.groupby("season").owar.sum() - 590 * games / 2430).abs().max() < 1

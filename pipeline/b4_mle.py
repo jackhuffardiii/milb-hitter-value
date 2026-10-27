@@ -16,17 +16,18 @@ import json
 import numpy as np
 import pandas as pd
 
+from . import config
 from .common import DATA
 
 LEVELS = ["a", "a+", "aa", "aaa", "mlb"]
 NEXT = dict(zip(LEVELS[:-1], LEVELS[1:]))
 COMPS = ["K", "BB", "ISO", "BABIP"]
 MEXICAN_LEAGUE = 125  # unaffiliated; appears under AAA through 2019
-MIN_PA = 50
-MIN_PA_CROSS = 300  # S6 v1.1: cross-season pairs (L in s -> L+1 in s+1) need >= 300 PA at both ends
+MIN_PA = config.MIN_PAIR
+MIN_PA_CROSS = config.MIN_PAIR_CROSS  # S6 v1.1: cross-season pairs (L in s -> L+1 in s+1) need >= 300 PA at both ends
 AGE_BUCKETS = [0, 21.5, 23.5, 25.5, 99]  # <=21, 22-23, 24-25, 26+ (age on July 1 of s)
 # FanGraphs stabilization points (denominator unit: PA for K/BB, AB for ISO, BIP for BABIP)
-K_STAB = {"K": 60, "BB": 120, "ISO": 160, "BABIP": 820}
+K_STAB = config.K_STAB_HIT
 DEN = {"K": "PA", "BB": "PA", "ISO": "AB", "BABIP": "BIP"}
 K_FIXED = 20000.0  # pair-weight fallback when reliability is unusable (r <= 0.05 or < 15 adjacent pairs)
 
@@ -84,70 +85,69 @@ def wmean(d, col, wcol):
     return (d[col].where(ok) * d[wcol].where(ok)).sum() / d[wcol].where(ok).sum() if ok.any() else np.nan
 
 
-def rollup(d, keys, cols=None):
+def rollup(d, keys, cols=None, comps=COMPS, den=DEN, w="PA"):
     """Sum counts and denominator-weighted-average the given rate columns per group (vectorized)."""
-    cols = cols or ["neutral_" + c for c in COMPS]
-    sums = d.groupby(keys)[["PA", "AB", "BIP"]].sum()
-    out = sums.copy()
-    for c, col in zip(COMPS * (len(cols) // 4), cols):
-        w = d[DEN[c]].where(d[col].notna(), 0.0)
-        num = (d[col].fillna(0) * w).groupby([d[k] for k in keys]).sum()
-        den = w.groupby([d[k] for k in keys]).sum()
-        out[col] = (num / den.where(den > 0))
+    cols = cols or ["neutral_" + c for c in comps]
+    out = d.groupby(keys)[list(dict.fromkeys([w] + [den[c] for c in comps]))].sum()
+    for c, col in zip(comps * (len(cols) // len(comps)), cols):
+        wt = d[den[c]].where(d[col].notna(), 0.0)
+        num = (d[col].fillna(0) * wt).groupby([d[k] for k in keys]).sum()
+        tot = wt.groupby([d[k] for k in keys]).sum()
+        out[col] = (num / tot.where(tot > 0))
     return out.reset_index()
 
 
-def _uppers(milb, mlb, min_pa):
-    nc = ["neutral_" + c for c in COMPS]
-    up_minor = rollup(milb, ["player_id", "season", "level"]).rename(columns={"PA": "PA_up"})
-    up_mlb = mlb.rename(columns={"PA": "PA_up"})
-    ups = pd.concat([up_minor, up_mlb[["player_id", "season", "level", "PA_up"] + nc]], ignore_index=True)
-    return ups[ups.PA_up >= min_pa]
+def _uppers(milb, mlb, min_pa, comps=COMPS, den=DEN, w="PA"):
+    nc = ["neutral_" + c for c in comps]
+    up_minor = rollup(milb, ["player_id", "season", "level"], None, comps, den, w).rename(columns={w: w + "_up"})
+    up_mlb = mlb.rename(columns={w: w + "_up"})
+    ups = pd.concat([up_minor, up_mlb[["player_id", "season", "level", w + "_up"] + nc]], ignore_index=True)
+    return ups[ups[w + "_up"] >= min_pa]
 
 
 def _bucket(age):
     return pd.cut(age, AGE_BUCKETS, labels=False)
 
 
-def aging_drift(milb):
+def aging_drift(milb, comps=COMPS, w="PA"):
     """S6 v1.1: year-over-year multiplicative drift of each neutral rate for players repeating a level (A..AAA, >= 300 PA
     in one league-level row both years), by age bucket. Divides aging out of cross-season pairs."""
-    a = milb[milb.PA >= MIN_PA_CROSS]
+    a = milb[milb[w] >= MIN_PA_CROSS]
     j = a.merge(a.assign(season=a.season - 1), on=["player_id", "season", "level"], suffixes=("", "_n"))
-    j["w"] = 2 * j.PA * j.PA_n / (j.PA + j.PA_n)
+    j["w"] = 2 * j[w] * j[w + "_n"] / (j[w] + j[w + "_n"])
     j["b"] = _bucket(j.age)
     out = {}
-    for c in COMPS:
+    for c in comps:
         q = j.dropna(subset=[f"neutral_{c}", f"neutral_{c}_n"])
         g = q.assign(nu=q.w * q[f"neutral_{c}_n"], nl=q.w * q[f"neutral_{c}"]).groupby("b")[["nu", "nl"]].sum()
         out[c] = (g.nu / g.nl).to_dict()
     return out
 
 
-def build_pairs(milb, mlb, drift):
+def build_pairs(milb, mlb, drift, comps=COMPS, den=DEN, w="PA"):
     """Same-season pairs (lower row and upper level aggregate both >= MIN_PA) plus cross-season pairs (lower row at L
     in s and L+1 aggregate in s+1, both >= MIN_PA_CROSS; upper rates divided by the aging drift of the lower row's age
     bucket). Same-season pairs alone are biased: promotions follow hot stretches, inflating the lower rate."""
-    nc = ["neutral_" + c for c in COMPS]
-    lo = milb[milb.PA >= MIN_PA][["player_id", "season", "level", "league_id", "PA", "age"] + nc]
+    nc = ["neutral_" + c for c in comps]
+    lo = milb[milb[w] >= MIN_PA][["player_id", "season", "level", "league_id", w, "age"] + nc]
     lo = lo.assign(up_level=lo.level.map(NEXT))
-    same = lo.merge(_uppers(milb, mlb, MIN_PA).rename(columns={"level": "up_level"}), on=["player_id", "season", "up_level"],
+    same = lo.merge(_uppers(milb, mlb, MIN_PA, comps, den, w).rename(columns={"level": "up_level"}), on=["player_id", "season", "up_level"],
                     suffixes=("_lo", "_up")).assign(kind="same")
-    lo2 = lo[lo.PA >= MIN_PA_CROSS]
-    up2 = _uppers(milb, mlb, MIN_PA_CROSS).rename(columns={"level": "up_level"}).assign(season=lambda d: d.season - 1)
+    lo2 = lo[lo[w] >= MIN_PA_CROSS]
+    up2 = _uppers(milb, mlb, MIN_PA_CROSS, comps, den, w).rename(columns={"level": "up_level"}).assign(season=lambda d: d.season - 1)
     cross = lo2.merge(up2, on=["player_id", "season", "up_level"], suffixes=("_lo", "_up")).assign(kind="cross")
     b = _bucket(cross.age)
-    for c in COMPS:
+    for c in comps:
         cross[f"neutral_{c}_up"] = cross[f"neutral_{c}_up"] / b.map(drift[c]).fillna(1.0)
     p = pd.concat([same, cross], ignore_index=True)
-    p["w"] = 2 * p.PA * p.PA_up / (p.PA + p.PA_up)
+    p["w"] = 2 * p[w] * p[w + "_up"] / (p[w] + p[w + "_up"])
     return p
 
 
-def raw_factors(p, keys):
+def raw_factors(p, keys, comps=COMPS):
     """Ratio of weighted means per component for each group in `keys`."""
     rows = []
-    for c in COMPS:
+    for c in comps:
         q = p.dropna(subset=[f"neutral_{c}_lo", f"neutral_{c}_up"])
         q = q.assign(nu=q.w * q[f"neutral_{c}_up"], nl=q.w * q[f"neutral_{c}_lo"])
         g = q.groupby(keys).agg(n_pairs=("w", "size"), pair_weight=("w", "sum"), nu=("nu", "sum"), nl=("nl", "sum"))
@@ -156,11 +156,11 @@ def raw_factors(p, keys):
     return pd.concat(rows, ignore_index=True)
 
 
-def estimate_k(child, parent_cols, keys_child):
+def estimate_k(child, parent_cols, keys_child, comps=COMPS):
     """k = mean(pair_weight)*(1-r)/r, r = corr of adjacent-season deviations from the parent raw factor.
     Adjacent = consecutive seasons (2019 and 2021 count as adjacent). Falls back to K_FIXED."""
     out = {}
-    for c in COMPS:
+    for c in comps:
         d = child[(child.component == c) & (child.pair_weight > 0)].copy()
         d["dev"] = d.raw_factor - d.parent_raw
         seasons = sorted(d.season.unique())
@@ -183,17 +183,17 @@ def shrink(raw, parent, k):
     return f.where(w.notna())
 
 
-def translation_factors(p, milb):
-    lg = raw_factors(p, ["level", "league_id", "season"])
-    ls = raw_factors(p, ["level", "season"]).assign(league_id=-1)
-    la = raw_factors(p, ["level"]).assign(league_id=-1, season=0)
+def translation_factors(p, milb, comps=COMPS):
+    lg = raw_factors(p, ["level", "league_id", "season"], comps)
+    ls = raw_factors(p, ["level", "season"], comps).assign(league_id=-1)
+    la = raw_factors(p, ["level"], comps).assign(league_id=-1, season=0)
     # full grid so every league-season / level-season exists (zero pairs fall back to the parent)
     grid = milb[["level", "league_id", "season"]].drop_duplicates()
     seasons = sorted(set(grid.season) | {2026})
     grid_ls = pd.MultiIndex.from_product([LEVELS[:4], seasons], names=["level", "season"]).to_frame(index=False)
-    comps = pd.DataFrame({"component": COMPS})
-    lg = grid.merge(comps, how="cross").merge(lg, how="left", on=["level", "league_id", "season", "component"])
-    ls = grid_ls.merge(comps, how="cross").assign(league_id=-1).merge(
+    cdf = pd.DataFrame({"component": comps})
+    lg = grid.merge(cdf, how="cross").merge(lg, how="left", on=["level", "league_id", "season", "component"])
+    ls = grid_ls.merge(cdf, how="cross").assign(league_id=-1).merge(
         ls, how="left", on=["level", "league_id", "season", "component"])
     for d in (lg, ls):
         d[["n_pairs", "pair_weight"]] = d[["n_pairs", "pair_weight"]].fillna(0)
@@ -201,10 +201,10 @@ def translation_factors(p, milb):
     # shrinkage k values
     ls["parent_raw"] = [la_f[(a, b)] for a, b in zip(ls.level, ls.component)]
     ls["factor_all"] = ls.parent_raw
-    k_ls = estimate_k(ls, ["parent_raw"], ["level"])
+    k_ls = estimate_k(ls, ["parent_raw"], ["level"], comps)
     lsr = ls.set_index(["level", "season", "component"]).raw_factor
     lg["parent_raw"] = [lsr.get((a, b, c), np.nan) for a, b, c in zip(lg.level, lg.season, lg.component)]
-    k_lg = estimate_k(lg.dropna(subset=["parent_raw"]), ["parent_raw"], ["level", "league_id"])
+    k_lg = estimate_k(lg.dropna(subset=["parent_raw"]), ["parent_raw"], ["level", "league_id"], comps)
     ls["factor"] = shrink(ls, ls.parent_raw, ls.component.map(lambda c: k_ls[c]["k"]))
     lsf = ls.set_index(["level", "season", "component"]).factor
     lg["parent_f"] = [lsf[(a, b, c)] for a, b, c in zip(lg.level, lg.season, lg.component)]
@@ -215,11 +215,11 @@ def translation_factors(p, milb):
     return out, {"league_season_to_level_season": k_lg, "level_season_to_level_all": k_ls}
 
 
-def apply_mle(milb, fac):
+def apply_mle(milb, fac, comps=COMPS):
     ls = fac[(fac.league_id == -1) & (fac.season > 0)].set_index(["from_level", "season", "component"]).factor
     lgf = fac[fac.league_id != -1].set_index(["from_level", "league_id", "season", "component"]).factor
     m = milb.copy()
-    for c in COMPS:
+    for c in comps:
         own = pd.Series([lgf[(a, b, s, c)] for a, b, s in zip(m.level, m.league_id, m.season)], index=m.index)
         chain = own.copy()
         for lv in ["a", "a+", "aa", "aaa"]:  # multiply by level-season factors of every higher level
@@ -231,33 +231,33 @@ def apply_mle(milb, fac):
     return m
 
 
-def regress(m):
-    for c in COMPS:
-        n = m[DEN[c]]
+def regress(m, comps=COMPS, den=DEN, stab=K_STAB):
+    for c in comps:
+        n = m[den[c]]
         ok = m["mle_" + c].notna() & (n > 0)
         key = [m.level, m.league_id, m.season]  # S6 v1.1: regress toward the source league-season mean, then translate
         prior = (m["mle_" + c].where(ok) * n.where(ok)).groupby(key).transform("sum") / n.where(ok).groupby(key).transform("sum")
         m["prior_" + c] = prior
-        m["reg_" + c] = (n * m["mle_" + c] + K_STAB[c] * prior) / (n + K_STAB[c])
+        m["reg_" + c] = (n * m["mle_" + c] + stab[c] * prior) / (n + stab[c])
     return m
 
 
-def player_season(m):
-    cols = [f"{p}_{c}" for p in ("mle", "reg") for c in COMPS]
+def player_season(m, comps=COMPS, den=DEN, w="PA"):
+    cols = [f"{p}_{c}" for p in ("mle", "reg") for c in comps]
     # weights: PA for K/BB, AB for ISO, BIP for BABIP (same denominators as the stabilization points)
-    out = rollup(m, ["player_id", "season"], cols).rename(columns={"PA": "PA"})[["player_id", "season", "PA"] + cols]
+    out = rollup(m, ["player_id", "season"], cols, comps, den, w)[["player_id", "season", w] + cols]
     top = m.assign(r=m.level.map(LEVELS.index)).sort_values("r").groupby(["player_id", "season"])["level"].last()
     return out.merge(top.rename("highest_level").reset_index(), on=["player_id", "season"])
 
 
-def level_step(m):
+def level_step(m, comps=COMPS, w="PA"):
     """C10: full-season (>= 300 PA, all MiLB PA at one level) movers L in s -> L+1 in s+1 vs same-level repeaters, mean
     change of mle_ rates; movers' change minus age-bucket-matched repeater change, with its standard error."""
-    t = m.groupby(["player_id", "season"]).PA.transform("sum")
-    a = m[(m.PA >= MIN_PA_CROSS)].assign(tot=t)
-    a = a.groupby(["player_id", "season", "level"]).agg(PA=("PA", "sum"), tot=("tot", "first"), age=("age", "first"),
-                                                         **{f"mle_{c}": (f"mle_{c}", "mean") for c in COMPS}).reset_index()
-    a = a[a.PA == a.tot]
+    t = m.groupby(["player_id", "season"])[w].transform("sum")
+    a = m[(m[w] >= MIN_PA_CROSS)].assign(tot=t)
+    a = a.groupby(["player_id", "season", "level"]).agg(**{w: (w, "sum")}, tot=("tot", "first"), age=("age", "first"),
+                                                         **{f"mle_{c}": (f"mle_{c}", "mean") for c in comps}).reset_index()
+    a = a[a[w] == a.tot]
     nxt = a.assign(season=a.season - 1)
     out = {}
     for lo, up in [("a", "a+"), ("a+", "aa"), ("aa", "aaa")]:
@@ -265,7 +265,7 @@ def level_step(m):
         rp = a[a.level == lo].merge(nxt[nxt.level == lo], on=["player_id", "season"], suffixes=("", "_n"))
         mv["b"], rp["b"] = _bucket(mv.age), _bucket(rp.age)
         res = {"n_movers": len(mv), "n_repeaters": len(rp)}
-        for c in COMPS:
+        for c in comps:
             dm, dr = mv[f"mle_{c}_n"] - mv[f"mle_{c}"], rp[f"mle_{c}_n"] - rp[f"mle_{c}"]
             rb = dr.groupby(rp.b).agg(["mean", "var", "size"])
             share = mv.b.value_counts(normalize=True)
