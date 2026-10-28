@@ -129,12 +129,31 @@ def dump(path, obj):
 
 
 def teams():
-    """team_id -> (name, parent org name, level, venue) for MiLB 2026, via cached Stats API."""
+    """team_id -> (name, parent org name, venue) for MLB and MiLB 2026, via cached Stats API. An MLB club is its own org."""
     out = {}
-    for sid in SPORT_LEVEL:
+    for sid in (1, *SPORT_LEVEL):
         for t in api_get("teams", sportId=sid, season=SEASON)["teams"]:
-            out[t["id"]] = dict(name=t["name"], org=t.get("parentOrgName"), venue=t.get("venue", {}).get("name"))
+            out[t["id"]] = dict(name=t["name"], org=t.get("parentOrgName", t["name"]), venue=t.get("venue", {}).get("name"))
     return out
+
+
+def org_lookup(ms, ids, tm, w):
+    """player_id -> (org, team). Org: latest 2026 transaction into an MLB or affiliated team (catches trades and signings;
+    AFL and winter-league moves are not in tm). Team: the highest-level 2026 stint (by column w) if it is in that org, else
+    the transaction's team."""
+    tx = pd.DataFrame([dict(player_id=t["person"]["id"], date=t.get("date"), tx=t["id"], team_id=t["toTeam"]["id"])
+                       for sp in (1, *SPORT_LEVEL)
+                       for t in api_get("transactions", startDate=f"{SEASON}-01-01", endDate=f"{SEASON}-12-31", sportId=sp)["transactions"]
+                       if t.get("person") and (t.get("toTeam") or {}).get("id") in tm])
+    last = tx[tx.player_id.isin(ids)].sort_values(["date", "tx"]).drop_duplicates("player_id", keep="last").set_index("player_id").team_id
+    cur = ms[(ms.season == SEASON) & ms.player_id.isin(ids)].assign(lv=lambda d: d.level.map({l: i for i, l in enumerate(LEVEL_ORDER)}))
+    top = cur.sort_values(["player_id", "lv", w], ascending=[True, True, False]).drop_duplicates("player_id").set_index("player_id")
+    stint = top.team_ids.dropna().map(lambda s: int(str(s).split("|")[0]))
+    tid = stint[stint.isin(list(tm))].combine_first(last).astype(int)
+    moved = last[last.index.isin(tid.index)]
+    moved = moved[[tm[t]["org"] != tm[tid[pid]]["org"] for pid, t in moved.items()]]
+    tid.update(moved)
+    return {pid: (tm[t]["org"], tm[t]["name"]) for pid, t in tid.astype(int).items()}
 
 
 def ply_names():
@@ -251,13 +270,7 @@ def main():
     v["rank"] = np.arange(1, len(v) + 1)
     ids = set(v.player_id)
 
-    cur = ms[(ms.season == SEASON) & ms.player_id.isin(ids)].copy()
-    cur["lv"] = cur.level.map({l: i for i, l in enumerate(LEVEL_ORDER)})
-    top = cur.sort_values(["player_id", "lv", "PA"], ascending=[True, True, False]).drop_duplicates("player_id").set_index("player_id")
-    org_of = {}
-    for pid, row in top.iterrows():
-        tid = int(str(row.team_ids).split("|")[0]) if pd.notna(row.team_ids) else None
-        org_of[pid] = (tm.get(tid, {}).get("org"), tm.get(tid, {}).get("name"))
+    org_of = org_lookup(ms, ids, tm, "PA")
 
     def pos_probs(pid):
         f = ft.loc[pid]
