@@ -12,7 +12,7 @@ import pandas as pd
 
 from . import b22_pitch_models as b22
 from .b5_features import MEXICAN_LEAGUE
-from .b9_site import LEVEL_ORDER, SEASON, SITE, dump, m, r, teams
+from .b9_site import LEVEL_ORDER, SEASON, SITE, dump, m, org_lookup, r, teams
 from .common import DATA
 
 LV = {l: i for i, l in enumerate(LEVEL_ORDER)}
@@ -23,16 +23,6 @@ def raw_rates(d):
     bip = d.BF - d.SO - d.BB - d.HBP - d.HR
     return {"K": d.SO / d.BF, "BB": (d.BB - d.IBB.fillna(0)) / d.BF, "HR": d.HR / d.BF, "GB": d.GO / (d.GO + d.AO),
             "XB": (d["2B"] + 2 * d["3B"]) / bip}
-
-
-def org_lookup(ms, ids, tm):
-    cur = ms[(ms.season == SEASON) & ms.player_id.isin(ids)].assign(lv=lambda d: d.level.map(LV))
-    top = cur.sort_values(["player_id", "lv", "BF"], ascending=[True, True, False]).drop_duplicates("player_id").set_index("player_id")
-    out = {}
-    for pid, row in top.iterrows():
-        tid = int(str(row.team_ids).split("|")[0]) if pd.notna(row.team_ids) else None
-        out[pid] = (tm.get(tid, {}).get("org"), tm.get(tid, {}).get("name"))
-    return out
 
 
 def pitchers_block():
@@ -75,7 +65,7 @@ def main():
     con = pd.read_parquet(DATA / "pitch_contact.parquet").query("season == @SEASON").set_index("player_id")
     dg = pd.read_parquet(DATA / "pitch_drivers_grouped.parquet").query("fit == 'final' and season == @SEASON")
     ply = pd.read_parquet(DATA / "pitch_players.parquet").set_index("player_id")
-    org = org_lookup(ms, set(v.index), teams())
+    org = org_lookup(ms, set(v.index), teams(), "BF")
     by = lambda d: {k: g for k, g in d.groupby("player_id")}  # noqa: E731
     ms_by, mle_by, mera_by, ars_by, dg_by = by(ms[ms.season >= SEASON - 2]), by(mle), by(mera), by(ars), by(dg)
     pd_cols = [c for c in v.columns if c.startswith("p_debut_")]
@@ -85,7 +75,7 @@ def main():
     for pid, x in v.iterrows():
         f, p = ft.loc[pid], pp.loc[pid]
         stat = x.group == "stat"
-        sp = "SP" if stat and f.p_sp >= .5 else ("RP" if stat else None)
+        sp = "SP" if f.GS_share > .5 else "RP"  # role = 2026 usage (mostly starts -> SP); p_sp stays on the card
         org_, team = org.get(pid, (None, None))
         lbj["rows"].append(dict(id=int(pid), name=f["name"], org=org_, team=team, level=f.highest_level, age=r(f.age, 1),
                                 pos=(f.throws + "HP") if pd.notna(f.throws) else "P", mlb_pos=sp, group=x.group, low_conf=bool(x.low_confidence),
