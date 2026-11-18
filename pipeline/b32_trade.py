@@ -32,9 +32,10 @@ def details():
     for _, m in pd.read_parquet(DATA / "mlb_values.parquet").iterrows():
         d = out.setdefault(int(m.player_id), {})
         d["contract"] = m.contract_summary if isinstance(m.contract_summary, str) else None
+        d["next"] = [r(m[f"war_{YEARS[0]}"], 1), r(m[f"value_{YEARS[0]}"] / 1e6, 1)]  # [WAR, market value $M], free agents too
         if m.player_id not in lb:  # board players keep their v2 value (assets()), so their contract years would not sum to v
-            d["yrs"] = [[y, m[f"status_{y}"], r(m[f"salary_{y}"] / 1e6, 2), r(m[f"war_{y}"], 1), r(m[f"surplus_{y}"] / 1e6, 1)]
-                        for y in YEARS if isinstance(m[f"status_{y}"], str)]
+            d["yrs"] = [[y, m[f"status_{y}"], r(m[f"salary_{y}"] / 1e6, 2), r(m[f"war_{y}"], 1), r(m[f"surplus_{y}"] / 1e6, 1),
+                         r(m[f"value_{y}"] / 1e6, 1)] for y in YEARS if isinstance(m[f"status_{y}"], str)]
     return out
 
 

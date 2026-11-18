@@ -150,6 +150,7 @@ def mlb_values():
     for j, y in enumerate(YEARS):
         out[f"war_{y}"], out[f"status_{y}"], out[f"salary_{y}"] = war[:, j], status[:, j], np.where(status[:, j] == None, np.nan, salary[:, j])  # noqa: E711
         out[f"surplus_{y}"] = by_year[:, j]
+        out[f"value_{y}"] = war[:, j] * dpw[j]  # market value of the projected WAR that year, nominal $, control or not
     out["control_years"] = (status != None).sum(axis=1)  # noqa: E711
     out["surplus"] = tot.mean(axis=1)
     for a in (0.1, 0.5, 0.9):
