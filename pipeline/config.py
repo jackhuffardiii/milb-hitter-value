@@ -3,6 +3,7 @@
 Dollar parameters ($/WAR, inflation, minimum salary, arbitration shares, discount rate) live in data/manual/dollar_params.csv.
 Values here are the pre-registered v2 choices; a change is a methodology change, so log it in docs/handoff.md.
 """
+from pathlib import Path
 
 # ---- WAR scale (S17, Q20). rerun: --from b2 (hitters) / --from b17 (pitchers); both feed the board.
 POS_WAR_PER_2430 = 590  # position-player WAR per 2,430 MLB games (Baseball-Reference split)
@@ -52,3 +53,5 @@ ARB_HOLDOUT_FIRST = 2021  # arb model is chosen on 2011-2020 grouped CV; 2021-20
 # ---- MLB surplus and trades (S36, S39). rerun: --from b31.
 ROSTER_MAX = 40  # 40-man limit checked on each side of a trade
 CBT_THRESHOLD_2027 = 244e6  # competitive balance tax threshold assumed for 2027 (2026: $244M; CBA expires Dec 2026)
+# ---- Publishing (trade-web-merge-spec A2). rerun: b34. The Trade Web checkout b34 writes the site data into.
+TRADE_WEB = Path.home() / "Projects" / "mlb-trade-web"
