@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .b31_mlb_value import TEAM_NAMES
-from .b9_site import RUN_DATE, SITE, dump, r
+from .b31_mlb_value import TEAM_NAMES, YEARS
+from .b9_site import SITE, dump, r
 from .common import DATA
 
 TRADES = Path.home() / "Projects" / "mlb-trade-web" / "public" / "data" / "trades.json"
@@ -24,7 +24,22 @@ DECLARED = "2026-10-10"  # v3 declaration date: trades after it are the pre-regi
 FAIR = 10e6  # a trade is "even" when the two sides' value gains are within this many dollars
 
 
+def details():
+    """Per-player page data. MLB: the contract and each controlled year as [year, status, salary $M, WAR, surplus $M]
+    (status g guaranteed, a arb, p pre-arb; surplus discounted, the years sum to v). Prospects: P(MLB), E[WAR], ETA year."""
+    lb = {x["id"]: x for x in json.loads((SITE / "leaderboard.json").read_text())["rows"]}
+    out = {i: dict(p_mlb=x["p_mlb"], cwar=x["war"], eta=None if x["in_mlb"] else int(2026 + round(x["eta"]))) for i, x in lb.items()}
+    for _, m in pd.read_parquet(DATA / "mlb_values.parquet").iterrows():
+        d = out.setdefault(int(m.player_id), {})
+        d["contract"] = m.contract_summary if isinstance(m.contract_summary, str) else None
+        if m.player_id not in lb:  # board players keep their v2 value (assets()), so their contract years would not sum to v
+            d["yrs"] = [[y, m[f"status_{y}"], r(m[f"salary_{y}"] / 1e6, 2), r(m[f"war_{y}"], 1), r(m[f"surplus_{y}"] / 1e6, 1)]
+                        for y in YEARS if isinstance(m[f"status_{y}"], str)]
+    return out
+
+
 def site_json(a):
+    detail = details()
     teams = []
     for code, name in sorted(TEAM_NAMES.items(), key=lambda x: x[1]):
         t = a[a.team == code]
@@ -32,9 +47,10 @@ def site_json(a):
     rows = [dict(id=int(x.player_id), name=x.name, team=x.team, kind=x.kind, pos=x.pos if isinstance(x.pos, str) else None,
                  level=x.level, age=r(x.age, 1), v=r(x.value / 1e6, 2), q10=r(x.q10 / 1e6, 1), q90=r(x.q90 / 1e6, 1),
                  war=r(x.war_next, 1), sal=r(x.salary_next / 1e6, 2), ctrl=int(x.control_years), on40=bool(x.on_40),
-                 rank=None if pd.isna(x.rank) else int(x.rank))
+                 rank=None if pd.isna(x.rank) else int(x.rank), **detail.get(int(x.player_id), {}))
             for x in a.sort_values("value", ascending=False).itertuples()]
-    dump(SITE / "trade.json", dict(run_date=RUN_DATE, season=2027, cbt=config.CBT_THRESHOLD_2027 / 1e6, roster_max=config.ROSTER_MAX,
+    run_date = json.loads((SITE / "leaderboard.json").read_text())["run_date"]  # the values' snapshot, not today (a lone b32 rerun must not relabel it)
+    dump(SITE / "trade.json", dict(run_date=run_date, season=2027, cbt=config.CBT_THRESHOLD_2027 / 1e6, roster_max=config.ROSTER_MAX,
                                    fair=FAIR / 1e6, teams=teams, assets=rows))
 
 
