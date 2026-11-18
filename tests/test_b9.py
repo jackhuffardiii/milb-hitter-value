@@ -50,15 +50,6 @@ def test_method_keys():
     assert m["C1"]["r_owar_bwar"] >= 0.85
 
 
-def test_no_external_references():
-    for f in list(SITE.glob("*.html")) + list(SITE.glob("*.css")):
-        assert "http://" not in f.read_text() and "https://" not in f.read_text(), f
-    js = (SITE / "app.js").read_text()
-    assert 'createElement("script")' not in js and "@import" not in js and "cdn" not in js.lower()
-    # the only absolute URLs in JS are footer/source links (anchors), never loaded resources
-    assert "fetch(\"http" not in js
-
-
 def test_run_date_in_every_export():
     iso = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     for f in [D / "leaderboard.json", D / "method.json", D / "players" / f"{LB[0]['id']}.json"]:

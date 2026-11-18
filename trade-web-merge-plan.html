@@ -1,0 +1,269 @@
+<title>Trade Web Merge Plan</title>
+<style>
+  :root {
+    --bg: #f4f6f7; --panel: #ffffff; --ink: #16202a; --muted: #5d6b78;
+    --line: #d3dbe2; --rule: #b9c5ce;
+    --accent: #17516e; --accent-soft: #e2ecf2;
+    --warn: #8a5a12; --warn-soft: #f7efdf;
+    --cut: #7d4145; --cut-soft: #f4e6e6;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171c; --panel: #1a2027; --ink: #e6ebf0; --muted: #8fa0ae;
+      --line: #2a333c; --rule: #3a4650;
+      --accent: #6fb2d6; --accent-soft: #16303f;
+      --warn: #d3a45e; --warn-soft: #2c2417;
+      --cut: #cf8b8b; --cut-soft: #2d1e1f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12171c; --panel: #1a2027; --ink: #e6ebf0; --muted: #8fa0ae;
+    --line: #2a333c; --rule: #3a4650;
+    --accent: #6fb2d6; --accent-soft: #16303f;
+    --warn: #d3a45e; --warn-soft: #2c2417;
+    --cut: #cf8b8b; --cut-soft: #2d1e1f;
+  }
+
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 var(--sans);
+    margin: 0; padding: 3rem 1.25rem 6rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; }
+
+  header { border-bottom: 2px solid var(--rule); padding-bottom: 1.5rem; }
+  .eyebrow { font: 500 .7rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+             color: var(--muted); margin: 0 0 .9rem; }
+  h1 { font-size: clamp(1.75rem, 4.5vw, 2.6rem); line-height: 1.1; margin: 0 0 .7rem;
+       letter-spacing: -.025em; font-weight: 600; text-wrap: balance; }
+  .claim { font-size: 1.08rem; color: var(--muted); margin: 0; max-width: 44rem; text-wrap: pretty; }
+  .meta { display: flex; flex-wrap: wrap; gap: .45rem .9rem; align-items: center; margin-top: 1.4rem;
+          font: 500 .72rem/1 var(--mono); letter-spacing: .04em; color: var(--muted); }
+  .status { letter-spacing: .12em; text-transform: uppercase; padding: .3rem .5rem;
+            border: 1px solid var(--warn); color: var(--warn); background: var(--warn-soft); }
+  .status.approved { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  .howto { background: var(--accent-soft); color: var(--ink); padding: .9rem 1.1rem;
+           margin-top: 1.75rem; font-size: .9rem; border: 1px solid var(--line); }
+  .howto b { color: var(--accent); }
+  .howto code, .meta code { font: 600 .85em var(--mono); background: var(--panel);
+                            padding: .12rem .4rem; border: 1px solid var(--line); }
+
+  section { margin-top: 3rem; }
+  h2 { font: 600 .72rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+       color: var(--muted); margin: 0 0 .2rem; padding-bottom: .7rem; border-bottom: 1px solid var(--rule); }
+
+  /* the ledger row: id in the gutter, claim in the body */
+  .row { display: grid; grid-template-columns: 4.25rem 1fr; gap: 1rem;
+         padding: .85rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .row:last-child { border-bottom: none; }
+  .id { font: 600 .74rem/1.5 var(--mono); letter-spacing: .05em; color: var(--accent);
+        border: 1px solid var(--line); background: var(--panel); text-align: center;
+        padding: .15rem 0; user-select: all; font-variant-numeric: tabular-nums; }
+  .row p { margin: 0; text-wrap: pretty; }
+  .why { display: block; color: var(--muted); font-size: .89rem; margin-top: .3rem; }
+
+  .cut .id { color: var(--cut); background: var(--cut-soft); border-color: var(--cut-soft); }
+  .cut > p { color: var(--muted); }
+  .ask .id { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-soft); }
+
+  /* architecture: themed boxes, not Mermaid (which ships its own light theme) */
+  .diagram { background: var(--panel); border: 1px solid var(--line); padding: 1.5rem 1.25rem 1.25rem; margin: 0; }
+  .flow { display: flex; align-items: stretch; overflow-x: auto; padding-bottom: .5rem; }
+  .stage { flex: 0 0 auto; min-width: 6.4rem; text-align: center; border: 1px solid var(--rule);
+           background: var(--bg); padding: .7rem .55rem; font: 500 .78rem/1.35 var(--sans); }
+  .stage small { display: block; font: 500 .63rem/1.3 var(--mono); color: var(--muted);
+                 margin-top: .25rem; letter-spacing: .04em; }
+  .stage.gate { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+  .stage.loop { border-style: dashed; }
+  .arrow { flex: 0 0 auto; align-self: center; padding: 0 .5rem; font: 500 .9rem var(--mono); color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 1rem;
+            font: 500 .72rem/1.4 var(--mono); color: var(--muted); }
+  .legend span::before { content: "— "; }
+  figcaption { color: var(--muted); font-size: .85rem; margin-top: 1rem; }
+  figcaption code { font: 600 .85em var(--mono); color: var(--accent); }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .7rem .7rem .7rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 600 .68rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+       color: var(--muted); padding-bottom: .8rem; }
+  td.id-cell { font: 600 .74rem var(--mono); color: var(--accent); white-space: nowrap; }
+  td code { font: .88em var(--mono); color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Plan · Site merge</p>
+  <h1>Trade Web + Player Projections</h1>
+  <p class="claim">The Trade Web becomes the one site for both projects: trade history, value rankings, the trade machine, and every club's assets, with one player page for value, contract, and stats. The MiLB repo stays as the Python model and stops hosting a site.</p>
+  <div class="meta">
+    <span class="status approved">approved</span>
+    <span>2026-11-18</span>
+    <span>spec: <code>trade-web-merge-spec.md</code></span>
+  </div>
+</header>
+
+<div class="howto">
+  <b>Every block has an ID.</b> To change one, say <code>S3 should be X, not Y</code>
+  and only that block gets edited. IDs are never reused or renumbered.
+</div>
+
+<section>
+  <h2>Problem</h2>
+  <div class="row"><span class="id">P1</span><p>Two sites show overlapping numbers about the same players.<span class="why">Every UI change happens twice, and a player's value lives on one site while his trade history lives on the other.</span></p></div>
+  <div class="row"><span class="id">P2</span><p>The Trade Web player page has no stats for most MLB players who were never traded, and there's no view of a club's whole asset base.</p></div>
+</section>
+
+<section>
+  <h2>Who it's for</h2>
+  <div class="row"><span class="id">U1</span><p>Jack, plus anyone he sends the link to (front office contacts, interviewers). Public, desktop first, must work on a phone.</p></div>
+</section>
+
+<section>
+  <h2>Architecture</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" role="img" aria-label="The MiLB pipeline writes data files straight into the Trade Web repo; the Netlify site and the daily values fetch are removed; the Trade Web serves five tabs that all open one player page." style="max-width:100%;height:auto;color:var(--ink)" font-family="system-ui, sans-serif" font-size="12">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <!-- MiLB repo -->
+      <rect x="10" y="40" width="190" height="120" fill="none" stroke="currentColor" stroke-opacity=".5"/>
+      <text x="20" y="32" font-weight="600">MiLB repo (Python)</text>
+      <text x="105" y="80" text-anchor="middle">model pipeline</text>
+      <text x="105" y="96" text-anchor="middle" opacity=".7">b9, b31, b32</text>
+      <text x="105" y="130" text-anchor="middle" font-weight="600" fill="var(--accent)">new export step</text>
+      <text x="105" y="146" text-anchor="middle" opacity=".7">+ MLB stat pull</text>
+      <!-- removed Netlify -->
+      <rect x="10" y="210" width="190" height="50" fill="none" stroke="var(--cut)" stroke-dasharray="5 4"/>
+      <text x="105" y="232" text-anchor="middle" fill="var(--cut)">Netlify MiLB site</text>
+      <text x="105" y="248" text-anchor="middle" fill="var(--cut)">shut down</text>
+      <!-- arrow to public/data -->
+      <line x1="200" y1="135" x2="300" y2="135" stroke="var(--accent)" stroke-width="2" marker-end="url(#ah)" style="color:var(--accent)"/>
+      <text x="250" y="126" text-anchor="middle" fill="var(--accent)">writes files</text>
+      <!-- Trade Web repo -->
+      <rect x="300" y="40" width="550" height="230" fill="none" stroke="currentColor" stroke-opacity=".5"/>
+      <text x="310" y="32" font-weight="600">mlb-trade-web (Vite, Vercel)</text>
+      <rect x="315" y="95" width="140" height="80" fill="none" stroke="currentColor"/>
+      <text x="385" y="118" text-anchor="middle">public/data</text>
+      <text x="385" y="136" text-anchor="middle" opacity=".7">values, rankings,</text>
+      <text x="385" y="151" text-anchor="middle" opacity=".7">method, players/&lt;id&gt;</text>
+      <text x="385" y="210" text-anchor="middle" opacity=".7">daily Action:</text>
+      <text x="385" y="226" text-anchor="middle" opacity=".7">trades + Savant only</text>
+      <line x1="385" y1="198" x2="385" y2="177" stroke="currentColor" stroke-opacity=".6" marker-end="url(#ah)"/>
+      <!-- tabs -->
+      <g>
+        <rect x="500" y="55" width="150" height="26" fill="none" stroke="currentColor"/><text x="575" y="72" text-anchor="middle">Trade Web</text>
+        <rect x="500" y="89" width="150" height="26" fill="none" stroke="var(--accent)"/><text x="575" y="106" text-anchor="middle" fill="var(--accent)">Teams: Trades · Assets</text>
+        <rect x="500" y="123" width="150" height="26" fill="none" stroke="currentColor"/><text x="575" y="140" text-anchor="middle">Trade Returns</text>
+        <rect x="500" y="157" width="150" height="26" fill="none" stroke="var(--accent)"/><text x="575" y="174" text-anchor="middle" fill="var(--accent)">Trade Machine</text>
+        <rect x="500" y="191" width="150" height="26" fill="none" stroke="var(--accent)"/><text x="575" y="208" text-anchor="middle" fill="var(--accent)">Player Projections</text>
+      </g>
+      <line x1="455" y1="135" x2="497" y2="135" stroke="currentColor" marker-end="url(#ah)"/>
+      <text x="476" y="128" text-anchor="middle" opacity=".7">feeds</text>
+      <!-- player page -->
+      <rect x="700" y="105" width="135" height="60" fill="none" stroke="currentColor" stroke-width="2"/>
+      <text x="767" y="128" text-anchor="middle" font-weight="600">Player page</text>
+      <text x="767" y="146" text-anchor="middle" opacity=".7">value · contract · stats</text>
+      <line x1="650" y1="135" x2="697" y2="135" stroke="currentColor" marker-end="url(#ah)"/>
+      <text x="674" y="128" text-anchor="middle" opacity=".7">tap</text>
+    </svg>
+    <div class="legend"><span>blue = new or changed</span><span>red dashed = removed</span></div>
+    <figcaption>Comment on the diagram as <code>ARCH</code>. The MiLB repo stops being a website: it writes its files straight into the Trade Web, and every tab opens the same player page.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>In scope</h2>
+  <div class="row"><span class="id">S1</span><p>Top tabs become Trade Web, Teams (renamed from Team Flows), Trade Returns, Trade Machine (new), Player Projections (new).</p></div>
+  <div class="row"><span class="id">S2</span><p>Teams gets an Assets sub-tab next to the two it already had (Trees and Ledger, unchanged). One club selector drives all three.<span class="why">Changed at build: Team Flows already had two sub-tabs, so Assets became the third.</span></p></div>
+  <div class="row"><span class="id">S3</span><p>Assets shows two columns for the selected club: MLB (established MLB players, about 35 per club) and Minors (its prospects). Each row: name, position, age, level or contract, value with its 10th-90th range. Highest value first.</p></div>
+  <div class="row"><span class="id">S4</span><p>Tapping any player anywhere opens the one player page.</p></div>
+  <div class="row"><span class="id">S5</span><p>Player page shows value (range and value read), contract year by year for MLB players or P(MLB), career WAR, ETA for prospects, and stats: MLB year-by-year on top, MiLB by level below.</p></div>
+  <div class="row"><span class="id">S6</span><p>Player Projections tab: all 8,002 valued players on one board, filters for name, hitter/pitcher, MLB vs prospect, level, club, low confidence, plus sorting.<span class="why">Changed at build: the MiLB leaderboard file holds only the 6,958 prospects, so the board joins the value file to it.</span></p></div>
+  <div class="row"><span class="id">S7</span><p>Trade Machine tab: the MiLB trade simulator moved over as-is (value in vs out, 40-man limit, 2027 payroll vs the tax line, Shop a player), restyled to match.</p></div>
+  <div class="row"><span class="id">S8</span><p>Methodology page moves into the Trade Web. Links to milb-hitter-value.netlify.app point inside the Trade Web.</p></div>
+  <div class="row"><span class="id">S9</span><p>Every new view has a shareable URL and works with browser back/forward.</p></div>
+  <div class="row"><span class="id">S10</span><p>MiLB repo stops publishing a site (<code>site/</code> pages and <code>netlify.toml</code> removed). Jack shuts down the Netlify site after the Trade Web PR is live.</p></div>
+</section>
+
+<section>
+  <h2>Not in v1</h2>
+  <div class="row cut"><span class="id">X1</span><p>Later: a true 26-man column.<span class="why">No 26-man data exists and it's the offseason. Revisit in spring if active rosters matter.</span></p></div>
+  <div class="row cut"><span class="id">X2</span><p>Later: redesigning the trade machine.</p></div>
+  <div class="row cut"><span class="id">X3</span><p>Later: contender/rebuilder adjustments to trade values.</p></div>
+  <div class="row cut"><span class="id">X4</span><p>Never: keeping the MiLB site live alongside the Trade Web.</p></div>
+  <div class="row cut"><span class="id">X5</span><p>Later: the prospect card's deep detail (projection drivers, rate chain, splits, batted ball, arsenal, debut-year chart).<span class="why">The player page shows value, outlook and level-by-level stats; the rest lived on the retired MiLB card.</span></p></div>
+  <div class="row cut"><span class="id">X6</span><p>Later: global search finds only traded players and clubs; others are found on Player Projections or Teams &gt; Assets.</p></div>
+</section>
+
+<section>
+  <h2>Approach</h2>
+  <div class="row"><span class="id">A1</span><p>The Trade Web is the only site; new views follow its one-file-per-view pattern.<span class="why">It already has routing, history, and the look we want. The MiLB site has neither routing nor history.</span></p></div>
+  <div class="row"><span class="id">A2</span><p>A final MiLB pipeline step writes straight into the Trade Web's <code>public/data/</code>; Jack commits there.<span class="why">The model only changes when the pipeline runs, so a daily fetch from a middle site buys nothing.</span></p></div>
+  <div class="row"><span class="id">A3</span><p>Minor league stats: one small file per prospect, loaded when his page opens (0.7 KB each). MLB stats for all 1,044 valued MLB players join the existing <code>players.json</code>, which already loads only on demand and refreshes daily.<span class="why">Changed at build: <code>players.json</code> was already lazy, so adding them (5.8 to 6.6 MB) met the goal with no new loader.</span></p></div>
+  <div class="row"><span class="id">A4</span><p>Daily GitHub Action keeps trades, player stats and Savant, drops the values fetch. <code>fetch-values.mjs</code> stays as the converter b34 runs, since the daily grader reads <code>values.json</code>.<span class="why">Values now arrive by commit.</span></p></div>
+  <div class="row"><span class="id">A5</span><p>Rankings and trade machine code is ported into Trade Web views using its existing money format, helpers, and styles.<span class="why">One look, one money format.</span></p></div>
+  <div class="row"><span class="id">A6</span><p>Keep the existing <code>BREF</code> map as the one place club codes translate (SDP vs SD).</p></div>
+</section>
+
+<section>
+  <h2>Data</h2>
+  <div class="scroll"><table>
+    <tr><th>id</th><th>what</th><th>where it comes from</th><th>where it lives</th><th>verified</th></tr>
+    <tr><td class="id-cell">D1</td><td>Values + contracts, 8,002 players</td><td><code>b32_trade.py</code></td><td><code>trade.json</code></td><td>1,044 MLB, 6,958 prospects; fields checked</td></tr>
+    <tr><td class="id-cell">D2</td><td>Leaderboard rows</td><td><code>b9_site.py</code></td><td><code>leaderboard.json</code> (1.9 MB)</td><td>exists; filters checked at build</td></tr>
+    <tr><td class="id-cell">D3</td><td>Prospect stat history</td><td><code>b9_site.py</code></td><td><code>players/&lt;id&gt;.json</code> (6,958)</td><td>one file read</td></tr>
+    <tr><td class="id-cell">D4</td><td>MLB stats, all MLB players</td><td>MLB Stats API, new pull</td><td><code>players/&lt;id&gt;.json</code></td><td>today covers traded players only</td></tr>
+    <tr><td class="id-cell">D5</td><td>Method content</td><td><code>method.json</code></td><td>Trade Web method view</td><td>exists</td></tr>
+    <tr><td class="id-cell">D6</td><td>26-man rosters</td><td>none</td><td>none</td><td>not available; see X1</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Done means</h2>
+  <div class="row"><span class="id">C1</span><p>All five tabs load on desktop and a 375px phone with no console errors.</p></div>
+  <div class="row"><span class="id">C2</span><p>Assets for any club: MLB + Minors counts equal that club's count in the values data.</p></div>
+  <div class="row"><span class="id">C3</span><p>Every valued player opens a page with value and a stats table, or a clear "no stats yet" line.</p></div>
+  <div class="row"><span class="id">C4</span><p>Rankings row count and top 10 match the MiLB site for the same filters.</p></div>
+  <div class="row"><span class="id">C5</span><p>Trade machine matches the MiLB site's verdict on 3 test trades, including one over the 40-man limit and one over the tax line.</p></div>
+  <div class="row"><span class="id">C6</span><p><code>npm test</code>, <code>vite build</code>, and MiLB pytest pass; all 8,002 values unchanged.</p></div>
+  <div class="row"><span class="id">C7</span><p>No link in the Trade Web points to milb-hitter-value.netlify.app.</p></div>
+</section>
+
+<section>
+  <h2>Assumptions I made without asking</h2>
+  <div class="row ask"><span class="id">Q1</span><p>Trade Web stays the landing tab; new tabs go to its right in the S1 order.</p></div>
+  <div class="row ask"><span class="id">Q2</span><p>Minors includes 40-man prospects, marked with a small "40-man" tag.<span class="why">If wrong, they'd move to the MLB column.</span></p></div>
+  <div class="row ask"><span class="id">Q3</span><p>A player with no stats shows his value and a "no stats yet" line, not hidden.</p></div>
+  <div class="row ask"><span class="id">Q4</span><p>MLB stat pull is about 1,044 small API calls at export time, batched like today's player fetch.</p></div>
+  <div class="row ask"><span class="id">Q5</span><p>Trade Web stays on Vercel.</p></div>
+  <div class="row ask"><span class="id">Q6</span><p>Trade Web work on <code>projections-merge</code>, cut from main.<span class="why">Changed at build: <code>next-season-value</code> had already merged.</span></p></div>
+  <div class="row ask"><span class="id">Q7</span><p>142 MLB players with no control left (free agents this winter) still list under their 2026 club in Assets, tagged "free agent", at $0.</p></div>
+  <div class="row ask"><span class="id">Q8</span><p>Stand-alone player pages rely on the browser back button; pages opened from Trade Returns keep "Back to trade".</p></div>
+</section>
+
+<section>
+  <h2>Build order</h2>
+  <div class="row"><span class="id">B1</span><p>MiLB export step into Trade Web <code>public/data/</code>.<span class="why">Small.</span></p></div>
+  <div class="row"><span class="id">B2</span><p>MLB per-player stat pull and file format.<span class="why">Medium.</span></p></div>
+  <div class="row"><span class="id">B3</span><p>Tab bar, Teams rename, Trades/Assets sub-tabs, Assets view. First thing you can click.<span class="why">Medium.</span></p></div>
+  <div class="row"><span class="id">B4</span><p>Player page stats tables; every entry point routes to it.<span class="why">Medium.</span></p></div>
+  <div class="row"><span class="id">B5</span><p>Player Projections tab.<span class="why">Medium.</span></p></div>
+  <div class="row"><span class="id">B6</span><p>Trade Machine tab with Shop a player.<span class="why">Large.</span></p></div>
+  <div class="row"><span class="id">B7</span><p>Methodology page, link sweep, drop values fetch from the Action.<span class="why">Small.</span></p></div>
+  <div class="row"><span class="id">B8</span><p>MiLB: remove <code>site/</code> pages and <code>netlify.toml</code>.<span class="why">Small.</span></p></div>
+  <div class="row"><span class="id">B9</span><p>Verify C1-C7, <code>/code-review</code> on both PRs, open the PRs.<span class="why">Medium.</span></p></div>
+</section>
+
+<section>
+  <h2>How we build it</h2>
+  <div class="row"><span class="id">V1</span><p>Claude builds it in this session.</p></div>
+  <div class="row"><span class="id">V2</span><p>Claude verifies every tab in the browser preview at desktop and phone width, and runs the test suites.</p></div>
+  <div class="row"><span class="id">V3</span><p><code>/code-review</code> runs on each PR before Jack sees it.</p></div>
+  <div class="row"><span class="id">V4</span><p>One PR per repo. Jack reviews and merges; Vercel deploys. Jack shuts down Netlify himself.</p></div>
+</section>
+
+</div>

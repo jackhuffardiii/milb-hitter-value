@@ -1,6 +1,6 @@
 """B32 (v3 S39, C26, DRAFT defaults): trade simulator data and the real-trade replay.
 
-site/data/trade.json feeds the browser simulator (site/trade.html, app.js initTrade): every organization's assets (B31: MLB
+site/data/trade.json feeds the Trade Web's Trade Machine and Teams > Assets (copied there by b34): every organization's assets (B31: MLB
 players on the 40-man with contract surplus, v2 prospects with expected surplus), team-neutral values in $M (S40 contender
 adjustment not applied; NBA precedent), each team's projected 2027 payroll and 40-man count. The browser does the rest:
 value in minus value out per side, 40-man limit (config.ROSTER_MAX), payroll vs config.CBT_THRESHOLD_2027.
