@@ -144,10 +144,12 @@ def mlb_values():
     sur = np.where(floored, np.maximum(sur, 0), sur)
     sur = np.where((status == None)[:, None, :], 0, sur) / disc  # noqa: E711
     tot = sur.sum(axis=2)
+    by_year = sur.mean(axis=1)  # (n, years) expected discounted surplus per year; sums to the mean total
     out = c[["player_id", "team", "name", "age", "service_years", "contract_summary"]].copy()
     out["kind"] = kind
     for j, y in enumerate(YEARS):
         out[f"war_{y}"], out[f"status_{y}"], out[f"salary_{y}"] = war[:, j], status[:, j], np.where(status[:, j] == None, np.nan, salary[:, j])  # noqa: E711
+        out[f"surplus_{y}"] = by_year[:, j]
     out["control_years"] = (status != None).sum(axis=1)  # noqa: E711
     out["surplus"] = tot.mean(axis=1)
     for a in (0.1, 0.5, 0.9):
