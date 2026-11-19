@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .common import DATA
+from .common import DATA, is_starter
 
 BASE = 2026  # last complete season in the data
 UNIT = {"hitter": 600, "pitcher": 450}  # age adjustments are WAR per 600 PA / 450 outs
@@ -72,7 +72,7 @@ def marcel(hist, base_season, birth):
         win = win.assign(ww=win.season.map(w) * win.war, wp=win.season.map(w) * win.pt)
         x = win.groupby("player_id")[["ww", "wp", "G", "GS"]].sum()
         x["rate"] = (x.ww + reg * m) / (x.wp + reg)
-        x["starter"] = (x.GS / x.G.replace(0, np.nan) > .5).fillna(False)
+        x["starter"] = is_starter(d).xs(base_season, level="season").reindex(x.index, fill_value=False)
         last = d[d.season == base_season].set_index("player_id").pt.reindex(x.index).fillna(0)
         prev = d[d.season == base_season - 1].set_index("player_id").pt.reindex(x.index).fillna(0)
         x["pt_m"] = pa * last + pb * prev + (np.where(x.starter, pc[1], pc[0]) if kind == "pitcher" else pc[0])

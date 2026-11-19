@@ -17,7 +17,7 @@ import pandas as pd
 from . import config
 from .b6_models import MODELS, _lgb, _lgb_cv, _lin_cv, _linear
 from .b8_value import load_params
-from .common import DATA
+from .common import DATA, is_starter
 
 LEAGUE_MIN = {2010: 400e3, 2011: 414e3, 2012: 480e3, 2013: 490e3, 2014: 500e3, 2015: 507.5e3, 2016: 507.5e3, 2017: 535e3,
               2018: 545e3, 2019: 555e3, 2020: 563.5e3, 2021: 570.5e3, 2022: 700e3, 2023: 720e3, 2024: 740e3, 2025: 760e3}
@@ -62,7 +62,8 @@ def build():
     p = pd.read_parquet(DATA / "mlb_pitch_war.parquet")[["player_id", "season", "pwar", "G", "GS", "BF"]]
     w = h.merge(p, on=["player_id", "season"], how="outer").fillna(0)
     w["war"], w["pt"] = w.owar + w.pwar, w.PA + w.BF
-    w["pitcher"], w["starter"] = (w.BF > w.PA).astype(float), ((w.GS / w.G.where(w.G > 0)) > 0.5).astype(float)
+    w["pitcher"] = (w.BF > w.PA).astype(float)
+    w["starter"] = is_starter(w).reindex(pd.MultiIndex.from_frame(w[["player_id", "season"]]), fill_value=False).astype(float).values
     w = w.sort_values(["player_id", "season"])
     w["career_war"] = w.groupby("player_id").war.cumsum()
     w["war_3yr"] = sum(w.groupby("player_id").war.shift(k).fillna(0) for k in (0, 1, 2))
