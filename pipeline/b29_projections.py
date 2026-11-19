@@ -1,12 +1,18 @@
 """B29: MLB WAR projections 2027-2032 for the 2026 40-man population (v3 S33, C23).
 
 Marcel rate (3 seasons, config.MARCEL_WEIGHTS, regressed to the league WAR rate) x flat playing time (config.PT_HIT / PT_PITCH),
-plus our own age adjustment in place of Marcel's textbook one. Two sides: hitters (PT = PA, owar) and pitchers
+plus our own age adjustment in place of Marcel's textbook one, times a playing-time attrition factor. Two sides: hitters (PT = PA, owar) and pitchers
 (PT = outs, pwar); a two-way player (>= config.TWO_WAY_MIN_PA PA and >= config.TWO_WAY_MIN_BF BF in the window) gets both, summed.
 Age adjustment (audit 2026-10-19): per horizon h and base-season age, the PT-weighted mean of actual WAR rate in b+h minus
 the Marcel rate at b, over past bases b. Measured against the already-regressed Marcel rate, so regression to the mean is
 not counted twice (the old season-to-season delta curve was, and its sum went to -2.8 WAR/600 PA from 26 to 32), and fit
-per h, so nothing is summed. It is a rate given the player plays in b+h; playing-time attrition is not modeled (flat PT).
+per h, so nothing is summed. It is a rate given the player plays in b+h.
+PT attrition (audit 2026-11-19): projected PT in b+h = Marcel PT x (sum of actual PT in b+h, 0 if out of MLB / sum of Marcel PT),
+by cell (group x tier: tercile of Marcel WAR = rate x Marcel PT, within group and base season), h and age at b, over the same
+past bases. Tiers matter as much as age (h = 1: top-third starters kept 92% of Marcel PT, bottom third 53%). WAR terciles beat
+rate terciles and PT terciles on PT RMSE and on bias across role-size x age cells (2014-2025 backtest, 2026-11-19). Flat PT had starters at 322 projected outs vs
+214 actual at h = 1 and 162 at h = 3. The rate curve is conditional on playing and this factor is the chance-weighted PT, so
+the two do not overlap.
 `project(hist, base_season)` only sees seasons <= base_season (adjustments included), so the C23 backtest has no leakage.
 C23 (-> data/b29_c23.json): base seasons 2014-2025, every horizon h = 1..6 observed by 2026; ours vs plain Marcel vs
 last-season WAR at h = 1; rate bias at every h is gated (config.C23_MAX_RATE_BIAS); no tuning on it.
@@ -22,6 +28,7 @@ from .common import DATA
 BASE = 2026  # last complete season in the data
 UNIT = {"hitter": 600, "pitcher": 450}  # age adjustments are WAR per 600 PA / 450 outs
 GROUPS = ["hitter", "starter", "reliever"]
+TIERS = ["low", "mid", "high"]  # Marcel-WAR terciles within group and base season (PT attrition cells)
 CURVE_FIRST, CURVE_LAST_AGE = 2007, 38  # first base season with a full 3-season window (data start 2005); ages bucket at <=23 and >=38
 AGES = list(range(23, CURVE_LAST_AGE + 1))
 C23_BASES = [b for b in range(2014, 2025) if b not in (2019, 2020)]  # h = 1 comparison (unchanged)
@@ -53,7 +60,8 @@ def _smooth(s):
 
 
 def marcel(hist, base_season, birth):
-    """Marcel rate per (player_id, kind) from the window ending at base_season: rate, starter, group, age, pt_1 (projected PT)."""
+    """Marcel rate per (player_id, kind) from the window ending at base_season: rate, starter, group, age, pt_m (Marcel PT),
+    cell (group_tier)."""
     seasons = [base_season - i for i in range(len(config.MARCEL_WEIGHTS))]
     w = dict(zip(seasons, config.MARCEL_WEIGHTS))
     rows = []
@@ -67,16 +75,29 @@ def marcel(hist, base_season, birth):
         x["starter"] = (x.GS / x.G.replace(0, np.nan) > .5).fillna(False)
         last = d[d.season == base_season].set_index("player_id").pt.reindex(x.index).fillna(0)
         prev = d[d.season == base_season - 1].set_index("player_id").pt.reindex(x.index).fillna(0)
-        x["pt_1"] = pa * last + pb * prev + (np.where(x.starter, pc[1], pc[0]) if kind == "pitcher" else pc[0])
+        x["pt_m"] = pa * last + pb * prev + (np.where(x.starter, pc[1], pc[0]) if kind == "pitcher" else pc[0])
         x["age"] = age_on_july1(birth, x.index, base_season)
         x["group"] = np.where(x.starter, "starter", "reliever") if kind == "pitcher" else "hitter"
         rows.append(x.drop(columns=["ww", "wp"]).dropna(subset=["age"]).reset_index().assign(kind=kind))
-    return pd.concat(rows, ignore_index=True)
+    out = pd.concat(rows, ignore_index=True)
+    tier = (out.rate * out.pt_m).groupby(out.group).transform(lambda r: pd.qcut(r.rank(method="first"), 3, labels=TIERS).astype(str))
+    out["cell"] = out.group + "_" + tier
+    return out
+
+
+def _table(s):
+    """{group: {h: {age: value}}} from a (group, h, bucket) Series, gaps interpolated, 3-age smoothed."""
+    out = {}
+    for (g, h), x in s.groupby(level=[0, 1]):
+        out.setdefault(g, {})[h] = _smooth(x.droplevel([0, 1]).reindex(AGES).interpolate(limit_direction="both")).to_dict()
+    return out
 
 
 def fit_curves(hist, birth, last_season, n_years=config.PROJ_YEARS, mt=None):
-    """Age adjustments {group: {h: {age: WAR per UNIT PT}}}: PT-weighted mean of (actual rate in b+h - Marcel rate at b) by
-    floor(age at b), over bases b >= CURVE_FIRST with b + h <= last_season (2020 skipped as base or target).
+    """(rate, pt), each {group: {h: {age: value}}} by floor(age at b), over bases b >= CURVE_FIRST with b + h <= last_season
+    (2020 skipped as base or target). rate: PT-weighted mean of (actual rate in b+h - Marcel rate at b), WAR per UNIT PT,
+    players who play in b+h, keyed by group. pt: actual PT in b+h (0 if absent) / Marcel PT, every player who played in b,
+    keyed by cell.
     `mt`: optional {base: marcel(...)} cache (each table only sees seasons <= its base)."""
     mt = mt if mt is not None else {}
     act = hist[hist.pt > 0][["player_id", "kind", "season", "war", "pt"]]
@@ -92,17 +113,15 @@ def fit_curves(hist, birth, last_season, n_years=config.PROJ_YEARS, mt=None):
             if b + h > last_season or b + h == 2020:
                 continue
             a = act[act.season == b + h]
-            x = base.merge(a, on=["player_id", "kind"])
-            pairs.append(pd.DataFrame({"group": x.group, "h": h, "w": x.pt, "age": x.age,
+            x = base.merge(a, on=["player_id", "kind"], how="left")
+            pairs.append(pd.DataFrame({"group": x.group, "cell": x.cell, "h": h, "w": x.pt.fillna(0), "pt_m": x.pt_m, "age": x.age,
                                        "resid": (x.war / x.pt - x.rate) * x.kind.map(UNIT)}))
     p = pd.concat(pairs, ignore_index=True)
     p["bucket"] = np.floor(p.age).clip(AGES[0], AGES[-1]).astype(int)
     p["rw"] = p.resid * p.w
-    s = p.groupby(["group", "h", "bucket"])[["rw", "w"]].sum()
-    out = {}
-    for (g, h), x in (s.rw / s.w).groupby(level=[0, 1]):
-        out.setdefault(g, {})[h] = _smooth(x.droplevel([0, 1]).reindex(AGES).interpolate(limit_direction="both")).to_dict()
-    return out
+    s = p[p.w > 0].groupby(["group", "h", "bucket"])[["rw", "w"]].sum()
+    q = p.groupby(["cell", "h", "bucket"])[["w", "pt_m"]].sum()
+    return _table(s.rw / s.w), _table(q.w / q.pt_m)
 
 
 def _adj(curve, age):
@@ -110,17 +129,21 @@ def _adj(curve, age):
 
 
 def project(hist, base_season, birth, n_years=config.PROJ_YEARS, curves=None, mt=None):
-    """One row per (player_id, kind) with history in the Marcel window: age, starter, rate, pt_1..n, war_1..n (h = years ahead)."""
+    """One row per (player_id, kind) with history in the Marcel window: age, starter, rate, pt_1..n, war_1..n (h = years ahead).
+    `curves`: (rate, pt) from fit_curves."""
     hist = hist[hist.season <= base_season]
-    curves = curves or fit_curves(hist, birth, base_season, n_years, mt)
+    rate_c, pt_c = curves or fit_curves(hist, birth, base_season, n_years, mt)
     x = marcel(hist, base_season, birth)
     for h in range(1, n_years + 1):
-        adj = np.zeros(len(x))
+        adj, keep = np.zeros(len(x)), np.zeros(len(x))
         for g in x.group.unique():
             s = (x.group == g).to_numpy()
-            adj[s] = _adj(curves[g][h], x.age.to_numpy()[s])
-        x[f"pt_{h}"] = x.pt_1
-        x[f"war_{h}"] = (x.rate + adj / x.kind.map(UNIT)) * x.pt_1
+            adj[s] = _adj(rate_c[g][h], x.age.to_numpy()[s])
+        for c in x.cell.unique():
+            s = (x.cell == c).to_numpy()
+            keep[s] = _adj(pt_c[c][h], x.age.to_numpy()[s])
+        x[f"pt_{h}"] = x.pt_m * keep
+        x[f"war_{h}"] = (x.rate + adj / x.kind.map(UNIT)) * x[f"pt_{h}"]
     return x
 
 
@@ -132,9 +155,9 @@ def marcel_war(p, h=1):
 
 def c23(hist, birth):
     """Backtest, every base b in 2014-2025 (not 2020) and horizon h with b + h <= 2026 (target 2020 skipped), for players with
-    base-season PT > 0. h = 1 (C23_BASES): r / RMSE of ours vs plain Marcel vs last-season WAR. Every h: rate bias among
-    players who play in b + h (PT-weighted mean of projected minus actual rate, WAR per 600 PA / 450 outs; the gate) and
-    total-WAR bias per player (0 if absent; reported, not gated: flat PT has no attrition)."""
+    base-season PT > 0. h = 1 (C23_BASES): r / RMSE of ours vs plain Marcel (same PT) vs last-season WAR. Every h: rate bias
+    among players who play in b + h (PT-weighted mean of projected minus actual rate, WAR per 600 PA / 450 outs; the gate) and
+    mean total WAR per player, projected vs actual (0 if absent; reported, not gated)."""
     n = config.PROJ_YEARS
     mt, rows = {}, []
     for b in [b for b in range(2014, BASE) if b != 2020]:
@@ -146,15 +169,15 @@ def c23(hist, birth):
                 continue
             a = hist[hist.season == b + h][["player_id", "kind", "war", "pt"]].rename(columns={"war": "actual", "pt": "actual_pt"})
             x = p.merge(a, on=["player_id", "kind"], how="left").fillna({"actual": 0, "actual_pt": 0})
-            rows.append(pd.DataFrame({"base": b, "h": h, "kind": x.kind, "pt_1": x.pt_1, "naive": x.naive, "actual": x.actual,
+            rows.append(pd.DataFrame({"base": b, "h": h, "kind": x.kind, "pt_h": x[f"pt_{h}"], "naive": x.naive, "actual": x.actual,
                                       "actual_pt": x.actual_pt, "ours": x[f"war_{h}"], "marcel": marcel_war(x, h)}))
     d = pd.concat(rows, ignore_index=True)
     res = {"residual_sd_by_pt_tercile": {}, "bias_by_h": {}}
     for kind, x in d[(d.h == 1) & d.base.isin(C23_BASES)].groupby("kind"):
         r = {m: {"r": float(np.corrcoef(x[m], x.actual)[0, 1]), "rmse": float(np.sqrt(((x[m] - x.actual) ** 2).mean()))}
              for m in ("ours", "marcel", "naive")}
-        cuts = x.pt_1.quantile([1 / 3, 2 / 3]).tolist()
-        t = np.searchsorted(cuts, x.pt_1)  # same rule B31 uses: 0 low, 1 mid, 2 high
+        cuts = x.pt_h.quantile([1 / 3, 2 / 3]).tolist()
+        t = np.searchsorted(cuts, x.pt_h)  # same rule B31 uses: 0 low, 1 mid, 2 high
         res["residual_sd_by_pt_tercile"][kind] = [float((v.actual - v.ours).std()) for _, v in x.groupby(t)]
         res["residual_sd_by_pt_tercile"][f"cuts_{kind}"] = cuts
         r["n"] = len(x)
@@ -164,7 +187,7 @@ def c23(hist, birth):
         u, bias = UNIT[kind], {}
         for h, v in x.groupby("h"):
             pl = v[v.actual_pt > 0]
-            rate_bias = lambda m: float(((pl[m] / pl.pt_1 * pl.actual_pt).sum() - pl.actual.sum()) / pl.actual_pt.sum() * u)  # noqa: E731
+            rate_bias = lambda m: float(((pl[m] / pl.pt_h * pl.actual_pt).sum() - pl.actual.sum()) / pl.actual_pt.sum() * u)  # noqa: E731
             bias[int(h)] = {"n": len(v), "n_played": len(pl), "bases": sorted(int(b) for b in v.base.unique()),
                             "rate_bias": {m: rate_bias(m) for m in ("ours", "marcel")},
                             "mean_war": {m: float(v[m].mean()) for m in ("ours", "marcel", "actual")}}
@@ -179,8 +202,9 @@ def c23(hist, birth):
 def main():
     hist, birth = load_hist(), load_birth()
     curves = fit_curves(hist, birth, BASE)
-    json.dump({g: {str(h): {str(a): round(v, 4) for a, v in c.items()} for h, c in hc.items()} for g, hc in curves.items()},
-              open(DATA / "b29_aging.json", "w"), indent=1)
+    for name, t in zip(("b29_aging.json", "b29_attrition.json"), curves):
+        json.dump({g: {str(h): {str(a): round(v, 4) for a, v in c.items()} for h, c in hc.items()} for g, hc in t.items()},
+                  open(DATA / name, "w"), indent=1)
 
     p = project(hist, BASE, birth, curves=curves)
     ids = pd.read_parquet(DATA / "mlb_contracts_2026.parquet").player_id.dropna().astype(int).unique()
