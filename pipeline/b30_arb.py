@@ -105,6 +105,13 @@ def main():
     cv = {"ridge": rmse(oof_lin), "lightgbm": rmse(oof_lgb)}
     base_log = lambda x: np.log(np.maximum(baseline(x), league_min(x.season)) / league_min(x.season))
     chosen = min(cv, key=cv.get)
+    oof = oof_lin if chosen == "ridge" else oof_lgb
+    # Duan smearing (audit #6): exp(log prediction) is the median salary; x mean(exp(OOF residual)) gives the mean, which adds up
+    smear = float(np.mean(np.exp(y - oof)))
+    dollars = tr.rel.to_numpy() * league_min(tr.season.to_numpy())
+    pred_d = lambda s: np.exp(oof) * s * league_min(tr.season.to_numpy())  # noqa: E731
+    smearing = dict(factor=smear, cv_total_dollar_bias={k: float(pred_d(s).sum() / dollars.sum() - 1) for k, s in (("before", 1.0), ("after", smear))},
+                    cv_median_abs_pct_err={k: float(np.median(np.abs(pred_d(s) / dollars - 1))) for k, s in (("before", 1.0), ("after", smear))})
 
     def fit(x):
         if chosen == "ridge":
@@ -114,19 +121,19 @@ def main():
     m = fit(tr)
     pred = m.predict(design(ho, chosen == "ridge"))
     out = dict(n_rows=dict(train=len(tr), holdout=len(ho), super_two=int(d.super_two.sum())), cv_rmse_log=cv,
-               baseline_cv_rmse_log=float(np.sqrt(np.mean((y - base_log(tr)) ** 2))), chosen=chosen,
+               baseline_cv_rmse_log=float(np.sqrt(np.mean((y - base_log(tr)) ** 2))), chosen=chosen, smearing=smearing,
                holdout=dict(model=metrics(ho.y.to_numpy(), pred), baseline=metrics(ho.y.to_numpy(), base_log(ho).to_numpy())))
     final = fit(d)
     MODELS.mkdir(exist_ok=True)
-    joblib.dump(dict(model=final, kind=chosen), MODELS / "arb.joblib")
+    joblib.dump(dict(model=final, kind=chosen, smear=smear), MODELS / "arb.joblib")
     OUT.write_text(json.dumps(out, indent=1))
 
 
 def predict_arb(df):
-    """Arbitration-year salary in dollars (never below the season's league minimum)."""
+    """Expected (mean) arbitration-year salary in dollars, never below the season's league minimum."""
     art = joblib.load(MODELS / "arb.joblib")
     mn = league_min(df.season.to_numpy())
-    return mn * np.exp(np.maximum(art["model"].predict(design(df, art["kind"] == "ridge")), 0))
+    return mn * np.maximum(art["smear"] * np.exp(art["model"].predict(design(df, art["kind"] == "ridge"))), 1)
 
 
 if __name__ == "__main__":
