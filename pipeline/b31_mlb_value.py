@@ -25,7 +25,7 @@ from scipy.stats import norm
 from . import config
 from .b8_value import load_params
 from .b30_arb import league_min, predict_arb
-from .common import DATA
+from .common import DATA, is_starter
 
 TEAM_NAMES = {"ARI": "Arizona Diamondbacks", "OAK": "Athletics", "ATL": "Atlanta Braves", "BAL": "Baltimore Orioles",
               "BOS": "Boston Red Sox", "CHC": "Chicago Cubs", "CHW": "Chicago White Sox", "CIN": "Cincinnati Reds",
@@ -93,6 +93,7 @@ def arb_salaries(c, status, war, hist):
     career = last.war.sum()
     w3 = hist[hist.season.between(2024, 2026)].groupby("player_id").war.sum()
     s26 = hist[hist.season == 2026].set_index("player_id")
+    sp = is_starter(hist[hist.season <= 2026]).xs(2026, level="season")
     paid = pd.read_parquet(DATA / "mlb_salaries.parquet").query("season == 2026 and pos != ''").dropna(subset=["player_id"])
     paid = paid.groupby("player_id").salary.sum()
     for i, r in enumerate(c.itertuples()):
@@ -100,7 +101,7 @@ def arb_salaries(c, status, war, hist):
         prev_war = float(s26.war.get(pid, 0.0)) if pid in s26.index else 0.0
         cw, hist3 = float(career.get(pid, 0.0)), [float(w3.get(pid, 0.0))]
         prev_rel = np.log(paid[pid] / league_min(2026)) if pid in paid.index and paid[pid] > 1.05 * league_min(2026) else np.nan
-        starter = bool(pid in s26.index and s26.G.get(pid, 0) > 0 and s26.GS.get(pid, 0) / max(s26.G.get(pid, 1), 1) > .5)
+        starter = bool(sp.get(pid, False))
         is_p = bool(pid in s26.index and s26.outs.get(pid, 0) > 3 * s26.pa.get(pid, 0))
         prev_pt = float(s26.outs.get(pid, 0) if is_p else s26.pa.get(pid, 0)) if pid in s26.index else 0.0
         recent = [prev_war]

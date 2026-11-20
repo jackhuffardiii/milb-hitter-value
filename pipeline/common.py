@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +77,15 @@ def pmap(fn, items):
 
 COUNTS = ["G", "PA", "AB", "H", "2B", "3B", "HR", "BB", "IBB", "HBP", "SO", "SF", "SH",
           "SB", "CS", "GO", "AO", "pitches_faced", "swings", "whiffs"]
+
+
+def is_starter(g):
+    """Starter flag per (player_id, season): 5/4/3-weighted GS / G over that season and the two before > STARTER_SHARE.
+    g has player_id, season, G, GS (one row per player-season). Base seasons a player missed still get a flag from the window."""
+    from . import config
+    parts = [g.assign(season=g.season + k, G=g.G * w, GS=g.GS * w) for k, w in enumerate(config.MARCEL_WEIGHTS)]
+    s = pd.concat(parts).groupby(["player_id", "season"])[["G", "GS"]].sum()
+    return (s.GS / s.G.where(s.G > 0)).gt(config.STARTER_SHARE)
 
 
 def add_rates(df):

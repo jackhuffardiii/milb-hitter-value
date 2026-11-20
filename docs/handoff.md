@@ -559,3 +559,11 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - b32 rerun refreshed the trades file: C26 now has 10 two-team trades after the 2026-10-10 declaration (9 fully valued): median gap $7.5M, 67% within fair. Informational Jul-1 replay: median gap $11.7M -> $10.1M.
 - Still open: top-third rate under-regression at h >= 3 (hitters +.38, starters +.23 WAR/unit rate bias in the top WAR tercile); three different SP/RP rules (b29 3-season share, b30 and site 2026 only).
 - Rebased on the Trade Web merge (main eaec7c2): b34 pushes these values into mlb-trade-web/public/data (uncommitted there).
+
+### One SP/RP rule (audit 2026-11-19 #1), 2026-11-19
+- Before: three rules. b29 pooled GS / G over the 3-season window (unweighted), b30 used the prior season only, b31 arb salaries used 2026 only (starters who missed 2026 priced as relievers: Schwellenbach, Pepiot, Darvish, Berríos).
+- Fix: `is_starter()` in `pipeline/common.py` = 5/4/3-weighted GS / G over the season and the two before > `config.STARTER_SHARE` (.5). Used by b29 `marcel()`, b30 features (prior-season window) and b31 `arb_salaries()`. b25 prospect label unchanged (Decision B).
+- Label changes, 641 MLB pitchers: b29 6 flips (to SP: Wrobleski, Holmes, Bubic; to RP: Wicks, Muñoz, Montgomery). b31 66 flips (59 RP -> SP, 7 SP -> RP).
+- Known miss, accepted by Jack: Detmers (17/17, 0/61, 32/32) stays RP (weighted share .46; relief seasons count many games). Mean-of-season-shares alternative fixes Detmers and Kolek but makes Senzatela and Wells (0/57 in 2026) starters, so not used. Grant Taylor (6 GS in 96 G) is RP under any backward-looking rule; Steamer's 23 GS reflect team plans.
+- b30 refit, choice on 2011-20 grouped CV only: LightGBM .3693 -> .3692 log-RMSE, ridge .411 -> .412 (LightGBM still chosen).
+- Downstream: total MLB surplus $15.94B -> $15.91B, median $8.2M unchanged. C23 passes. Tests: 196 passed, 3 xfailed.
