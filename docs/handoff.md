@@ -575,3 +575,9 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Curves: reliever h1 adjustment now crosses zero at 27-28 (was 25-26); starters 24-26.
 - One look, bases 2017-2025 (target seasons overlap the choice window's 2017-2022 targets): rate bias hitters +.05 to +.25, relievers -.03 to -.23, starters .00 to -.08, all inside .25. C23 passes; h1 pitcher r/RMSE .636/.833 -> .637/.832.
 - Downstream: 99.5% of MLB players move < $2M; total surplus $15.91B -> $15.93B. Largest: Morillo (RP) +$9.7M, Schwellenbach (SP) -$7.2M, Buttó +$5.2M.
+
+### Arb salary retransformation (audit 2026-11-19 #6), 2026-11-19
+- Before: `predict_arb()` returned exp(log prediction), the median salary; arb dollars ran low.
+- Fix: Duan smearing factor = mean(exp(OOF residual)) from the 2011-20 GroupKFold of the chosen model, saved in models/arb.joblib, applied before the league-minimum floor (Decision C: mean).
+- CV only (no holdout look): factor 1.081. Total arb dollars, predicted vs actual: -5.8% -> +1.8%. Median abs error 17.7% -> 18.5% (worse by design).
+- Downstream: total MLB surplus $15.93B -> $15.55B; median $8.2M -> $8.0M. Median change per player by arb years left: 1 -$0.11M, 3 -$0.24M, 5 -$0.44M (smaller than the plan's ~$1M guess: many arb salaries sit near the floor). Largest: Mason Miller -$4.4M, Caminero -$4.1M, Turang -$4.0M, Henderson -$4.0M.
