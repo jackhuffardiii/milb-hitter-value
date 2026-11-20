@@ -581,3 +581,9 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Fix: Duan smearing factor = mean(exp(OOF residual)) from the 2011-20 GroupKFold of the chosen model, saved in models/arb.joblib, applied before the league-minimum floor (Decision C: mean).
 - CV only (no holdout look): factor 1.081. Total arb dollars, predicted vs actual: -5.8% -> +1.8%. Median abs error 17.7% -> 18.5% (worse by design).
 - Downstream: total MLB surplus $15.93B -> $15.55B; median $8.2M -> $8.0M. Median change per player by arb years left: 1 -$0.11M, 3 -$0.24M, 5 -$0.44M (smaller than the plan's ~$1M guess: many arb salaries sit near the floor). Largest: Mason Miller -$4.4M, Caminero -$4.1M, Turang -$4.0M, Henderson -$4.0M.
+
+### Outside benchmark: Steamer 2027 spot check (audit 2026-11-19 #4), 2026-11-19 (report only)
+- Data: `data/manual/steamer_2027_spotcheck.csv`, 20 players read off the free FanGraphs Steamer 2027 board (no export; FanGraphs export is members-only). Groups: our top 10 by surplus, 5 highest-WAR relievers, 5 older players on big contracts. Steamer columns: steamer_pt (PA or IP), steamer_war, steamer_gs; our columns are the pre-#1 snapshot when it was read.
+- Settled model (after #1, #3), 2027: rank corr .86 (unchanged). Top 10: our WAR -.58 vs Steamer, PT 94% of theirs. Relievers: -.17 WAR, but on 64% of Steamer's innings (our per-inning rate runs higher). Older: -1.31 WAR, PT 72% (Judge drives it; #7 targets this).
+- Steamer has Grant Taylor (23 GS) and Reid Detmers (31 GS) as starters; ours has both as relievers (Taylor 2.1 vs 2.6 WAR, Detmers 2.1 vs 3.3).
+- Nothing tuned to it. Steamer projects one season, so it cannot test years 3+ (#2 rests on the backtest alone, Decision F).
