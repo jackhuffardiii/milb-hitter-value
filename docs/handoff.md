@@ -567,3 +567,11 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Known miss, accepted by Jack: Detmers (17/17, 0/61, 32/32) stays RP (weighted share .46; relief seasons count many games). Mean-of-season-shares alternative fixes Detmers and Kolek but makes Senzatela and Wells (0/57 in 2026) starters, so not used. Grant Taylor (6 GS in 96 G) is RP under any backward-looking rule; Steamer's 23 GS reflect team plans.
 - b30 refit, choice on 2011-20 grouped CV only: LightGBM .3693 -> .3692 log-RMSE, ridge .411 -> .412 (LightGBM still chosen).
 - Downstream: total MLB surplus $15.94B -> $15.91B, median $8.2M unchanged. C23 passes. Tests: 196 passed, 3 xfailed.
+
+### Role-specific regression mean (audit 2026-11-19 #3), 2026-11-19
+- Before: every pitcher regressed toward one pooled league rate; the role aging curves absorbed the SP/RP level gap.
+- Fix (`marcel()`): league WAR per PT computed per group (hitter / starter / reliever) over the window. Hitters unchanged by construction.
+- Choice window (bases 2008-2016, curves fit only on earlier bases): rate bias moves <= .01 for starters and hitters, <= .04 for relievers; RMSE unchanged. Starter h5-h6 (-.25/-.55) and reliever h6 (+.31) were already outside .25 there before the change (h5-6 curves at those bases rest on 2007-2010 only).
+- Curves: reliever h1 adjustment now crosses zero at 27-28 (was 25-26); starters 24-26.
+- One look, bases 2017-2025 (target seasons overlap the choice window's 2017-2022 targets): rate bias hitters +.05 to +.25, relievers -.03 to -.23, starters .00 to -.08, all inside .25. C23 passes; h1 pitcher r/RMSE .636/.833 -> .637/.832.
+- Downstream: 99.5% of MLB players move < $2M; total surplus $15.91B -> $15.93B. Largest: Morillo (RP) +$9.7M, Schwellenbach (SP) -$7.2M, Buttó +$5.2M.

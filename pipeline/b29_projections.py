@@ -68,17 +68,17 @@ def marcel(hist, base_season, birth):
     for kind, reg, (pa, pb, *pc) in (("hitter", config.REGRESS_PA, config.PT_HIT), ("pitcher", config.REGRESS_OUTS, config.PT_PITCH)):
         d = hist[(hist.kind == kind) & (hist.season <= base_season)]
         win = d[d.season.isin(seasons)]
-        m = win[win.pt > 0].war.sum() / win[win.pt > 0].pt.sum()  # league WAR per PT over the window
         win = win.assign(ww=win.season.map(w) * win.war, wp=win.season.map(w) * win.pt)
-        x = win.groupby("player_id")[["ww", "wp", "G", "GS"]].sum()
-        x["rate"] = (x.ww + reg * m) / (x.wp + reg)
+        x = win.groupby("player_id")[["ww", "wp", "war", "pt", "G", "GS"]].sum()
         x["starter"] = is_starter(d).xs(base_season, level="season").reindex(x.index, fill_value=False)
+        x["group"] = np.where(x.starter, "starter", "reliever") if kind == "pitcher" else "hitter"
+        m = x.groupby("group").war.transform("sum") / x.groupby("group").pt.transform("sum")  # league WAR per PT, window, own group (audit #3)
+        x["rate"] = (x.ww + reg * m) / (x.wp + reg)
         last = d[d.season == base_season].set_index("player_id").pt.reindex(x.index).fillna(0)
         prev = d[d.season == base_season - 1].set_index("player_id").pt.reindex(x.index).fillna(0)
         x["pt_m"] = pa * last + pb * prev + (np.where(x.starter, pc[1], pc[0]) if kind == "pitcher" else pc[0])
         x["age"] = age_on_july1(birth, x.index, base_season)
-        x["group"] = np.where(x.starter, "starter", "reliever") if kind == "pitcher" else "hitter"
-        rows.append(x.drop(columns=["ww", "wp"]).dropna(subset=["age"]).reset_index().assign(kind=kind))
+        rows.append(x.drop(columns=["ww", "wp", "war", "pt"]).dropna(subset=["age"]).reset_index().assign(kind=kind))
     out = pd.concat(rows, ignore_index=True)
     tier = (out.rate * out.pt_m).groupby(out.group).transform(lambda r: pd.qcut(r.rank(method="first"), 3, labels=TIERS).astype(str))
     out["cell"] = out.group + "_" + tier
