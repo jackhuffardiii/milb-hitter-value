@@ -34,6 +34,7 @@ WAR_CUTOFF_PITCH = 2014
 # ---- Tracking contact (S28, C17). rerun: --from b21.
 CONTACT_XWOBA_ONLY = True  # True: tracked contact term = f(xwOBAcon) (Jack 2026-10-10); False: the C17 sample-size blend
 CONTACT_MIN_AAA_BIP = 100  # B22 swaps reg_XB only for seasons with this many AAA balls in play
+CONTACT_RATIO_WEIGHT = 0.0  # audit #5: B22 scales reg_XB by ratio ** this. 1 = full S28 (6.3x the untracked spread), .25 = spread-matched (C17 .05707 vs .05640 at 1), 0 = off (.05725). Off per Jack 2026-11-19: shrink not better than full on C17
 
 # ---- Two-way players (S29). rerun: --from b24.
 TWO_WAY_MIN_PA = 150

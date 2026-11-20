@@ -3,7 +3,7 @@ Platt rule (C4) and drivers (A6), on data/pitch_features.parquet.
 
 Stat design = B20's pitch_X (no mERA: C15 failed). S28 contact adjustment (C17 passed): for stat rows whose season has
 >= 100 AAA BIP and an xb_contact_adj, reg_XB and blend_reg_XB are scaled by xb_contact_adj / observed AAA XB/BIP
-(unadjusted values kept in *_raw). Prior design = the pitcher analog of B6 prior_X.
+(unadjusted values kept in *_raw), raised to config.CONTACT_RATIO_WEIGHT (0 = off since audit #5). Prior design = the pitcher analog of B6 prior_X.
 Selection uses stat s<=2012 GroupKFold CV only. WAR trains s<=2012 (backtest) or s<=2014 (fit2017, final): A12's "under 2%
 censored" rule gives 2014 for pitchers. No metric of any kind is computed on 2013-19 predictions (B23 is the single holdout
 look); b22_metrics.json holds only s<=2012 CV numbers, so calibration_check is the backtest fits' (fit2017/final Platt
@@ -54,7 +54,7 @@ def contact_adjust(f):
     a = aaa_contact()[K + ["XB", "BIP"]]
     c = pd.read_parquet(DATA / "pitch_contact.parquet")[K + ["xb_contact_adj"]]
     d = f[K].merge(a, on=K, how="left").merge(c, on=K, how="left")
-    ratio = (d.xb_contact_adj / d.XB).where((d.BIP >= MIN_AAA_BIP) & (d.XB > 0)).to_numpy()
+    ratio = ((d.xb_contact_adj / d.XB) ** config.CONTACT_RATIO_WEIGHT).where((d.BIP >= MIN_AAA_BIP) & (d.XB > 0)).to_numpy()
     hit = (f.group == "stat").to_numpy() & ~np.isnan(ratio)
     for col in ("reg_XB", "blend_reg_XB"):
         f[col + "_raw"] = f[col]

@@ -601,3 +601,11 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - One look, bases 2017-25: tier bias hitters .49 -> .18, pitchers .58 -> .25. RMSE pitchers better at every h; hitters h4-6 slightly worse (1.126/1.057/1.027 -> 1.129/1.060/1.040). Role rate bias all inside .25.
 - C23 passes; h1 unchanged (hitters .669/1.251, pitchers .637/.832); rate bias hitters +.06 to +.15, pitchers -.03 to -.17.
 - Downstream: total MLB surplus $15.55B -> $15.33B; median $8.0M -> $8.7M. Top: Crow-Armstrong $226M -> $203M, McGonigle $160M -> $136M, Misiorowski $151M -> $137M (bigger than the plan's -$8-12M guess). Ohtani -$16M. Bottom-tier players rise (Emerson +$7M).
+
+### S28 contact ratio (audit 2026-11-19 #5), 2026-11-19: S28 switched off
+- Jack (2026-11-19, Decision G): test the shrink; if it's not better, go without.
+- Knob: `config.CONTACT_RATIO_WEIGHT`; B22 scales reg_XB by (xb_contact_adj / AAA XB) ** weight.
+- Spread (AAA stat rows 2022-26, n 1,302 tracked; SD of reg_XB within season, tracked / untracked): weight 1 (old S28) 6.26x, 0 (off) 0.76x. Spread match at weight .25 (1.07x). The audit's "about doubles" understated it.
+- C17 setup (next-season AAA ISO on contact, bases 2023-24, n 237, GroupKFold by player, in-fold linear calibration; predictor XB^(1-w) x adj^w): w 1 .05640, .75 .05627, .5 .05676, .25 .05707, 0 .05725. The spread-matched shrink is not better than full S28 -> weight 0 (off). Note: C17 lets each predictor recalibrate, which the B22 model never does, so C17 cannot see the 6x spread; shrink vs off differ by 0.3% on 237 rows. Flip to .25 with one line if wanted.
+- No outcome CV is possible for tracked seasons (no MLB WAR yet).
+- Downstream (rebuild --from b22, 293 s; snapshot relabeled 2026-11-20): MLB and hitter prospects unchanged. 688 of 3,877 prospect pitchers move, max $4.8M; prospect pitcher total $5.23B -> $5.43B. Pitchers in the prospect top 100: 2 -> 2. Largest: Reifert +$4.8M, Wehunt +$4.4M, Gastelum +$3.9M; Davitt -$1.0M.
