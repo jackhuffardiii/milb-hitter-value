@@ -45,6 +45,9 @@ PROJ_FIRST, PROJ_YEARS = 2027, 6  # project 2027-2032
 MARCEL_WEIGHTS = (5, 4, 3)  # last three seasons, most recent first
 REGRESS_PA = 1200  # hitters: Marcel-style regression toward the league WAR rate, in PA
 REGRESS_OUTS = 450  # pitchers: same, in outs (150 IP)
+REGRESS_GROW_HIT, REGRESS_GROW_PITCH = 0.5, 1.0  # audit #2: regression at horizon h = base x (1 + grow x (h - 1)); largest tier-bias cut with RMSE not worse at any h, bases 2008-16 grid (0-3), 2026-11-19
+REGRESS_PA_H = tuple(REGRESS_PA * (1 + REGRESS_GROW_HIT * h) for h in range(PROJ_YEARS))
+REGRESS_OUTS_H = tuple(REGRESS_OUTS * (1 + REGRESS_GROW_PITCH * h) for h in range(PROJ_YEARS))
 PT_HIT = (0.5, 0.1, 200)  # projected PA = .5 x PA(s) + .1 x PA(s-1) + 200 (Marcel)
 PT_PITCH = (0.5, 0.1, 75, 180)  # projected outs = .5 x outs(s) + .1 x outs(s-1) + 75 (relievers) or 180 (starters)
 STARTER_SHARE = 0.5  # starter = 5/4/3-weighted GS / G over the last three seasons > this; one rule for b29, b30, b31 (audit #1, 2026-11-19)

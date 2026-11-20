@@ -65,7 +65,7 @@ def marcel(hist, base_season, birth):
     seasons = [base_season - i for i in range(len(config.MARCEL_WEIGHTS))]
     w = dict(zip(seasons, config.MARCEL_WEIGHTS))
     rows = []
-    for kind, reg, (pa, pb, *pc) in (("hitter", config.REGRESS_PA, config.PT_HIT), ("pitcher", config.REGRESS_OUTS, config.PT_PITCH)):
+    for kind, reg, (pa, pb, *pc) in (("hitter", config.REGRESS_PA_H, config.PT_HIT), ("pitcher", config.REGRESS_OUTS_H, config.PT_PITCH)):
         d = hist[(hist.kind == kind) & (hist.season <= base_season)]
         win = d[d.season.isin(seasons)]
         win = win.assign(ww=win.season.map(w) * win.war, wp=win.season.map(w) * win.pt)
@@ -73,7 +73,9 @@ def marcel(hist, base_season, birth):
         x["starter"] = is_starter(d).xs(base_season, level="season").reindex(x.index, fill_value=False)
         x["group"] = np.where(x.starter, "starter", "reliever") if kind == "pitcher" else "hitter"
         m = x.groupby("group").war.transform("sum") / x.groupby("group").pt.transform("sum")  # league WAR per PT, window, own group (audit #3)
-        x["rate"] = (x.ww + reg * m) / (x.wp + reg)
+        for h, r in enumerate(reg, 1):  # audit #2: regression grows with horizon h
+            x[f"rate_{h}"] = (x.ww + r * m) / (x.wp + r)
+        x["rate"] = x.rate_1
         last = d[d.season == base_season].set_index("player_id").pt.reindex(x.index).fillna(0)
         prev = d[d.season == base_season - 1].set_index("player_id").pt.reindex(x.index).fillna(0)
         x["pt_m"] = pa * last + pb * prev + (np.where(x.starter, pc[1], pc[0]) if kind == "pitcher" else pc[0])
@@ -115,7 +117,7 @@ def fit_curves(hist, birth, last_season, n_years=config.PROJ_YEARS, mt=None):
             a = act[act.season == b + h]
             x = base.merge(a, on=["player_id", "kind"], how="left")
             pairs.append(pd.DataFrame({"group": x.group, "cell": x.cell, "h": h, "w": x.pt.fillna(0), "pt_m": x.pt_m, "age": x.age,
-                                       "resid": (x.war / x.pt - x.rate) * x.kind.map(UNIT)}))
+                                       "resid": (x.war / x.pt - x[f"rate_{h}"]) * x.kind.map(UNIT)}))
     p = pd.concat(pairs, ignore_index=True)
     p["bucket"] = np.floor(p.age).clip(AGES[0], AGES[-1]).astype(int)
     p["rw"] = p.resid * p.w
@@ -143,7 +145,7 @@ def project(hist, base_season, birth, n_years=config.PROJ_YEARS, curves=None, mt
             s = (x.cell == c).to_numpy()
             keep[s] = _adj(pt_c[c][h], x.age.to_numpy()[s])
         x[f"pt_{h}"] = x.pt_m * keep
-        x[f"war_{h}"] = (x.rate + adj / x.kind.map(UNIT)) * x[f"pt_{h}"]
+        x[f"war_{h}"] = (x[f"rate_{h}"] + adj / x.kind.map(UNIT)) * x[f"pt_{h}"]
     return x
 
 

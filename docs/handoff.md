@@ -593,3 +593,11 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Evaluation group (fixed before the grid): base PT > 40% below prior norm (n 2,103 at h1). Without the rule, Marcel PT x attrition already OVER-projects them: proj/actual PT 1.17 at h1, 1.11 at h2. With the rule: 1.37-1.46 at h1, PT RMSE 146.8 -> 155-156 at every share. Overall PT RMSE 164.4 -> 166.
 - Established regulars inside that group (prior norm >= 500 PA / 450 outs, n 303; looked at after the grid): under-projected without the rule (.93 h1, .88 h2), over with it (1.25, 1.20). So Judge-type players are short by ~10%, but most short seasons are demotions or decline, and the full replacement overshoots both.
 - Open for Jack: a partial blend for regulars only (would be a new rule chosen after seeing this) or leave #7 closed. Judge stays at 314 PA for 2027.
+
+### Horizon-dependent regression (audit 2026-11-19 #2), 2026-11-19
+- Before: the same Marcel regression (1200 PA / 450 outs) at every horizon; top-third rate ran high and bottom-third low at h >= 3.
+- Fix: regression at horizon h = base x (1 + grow x (h - 1)) (`config.REGRESS_GROW_HIT/PITCH`, `REGRESS_PA_H/OUTS_H`); `marcel()` returns rate_1..rate_6, aging curves fit per h against rate_h. h = 1 unchanged by construction.
+- Choice (bases 2008-16, grid grow 0/.25/.5/1/1.5/2/3): score = n-weighted mean |rate bias| of top and bottom WAR tiers at h >= 2. Rule: largest cut with RMSE not worse at any h (tightened from the plan's "h = 1", which can't move; set after seeing the grid, since under the h = 1 rule pitchers sat at the grid edge). Hitters .5 (tier bias .52 -> .23), pitchers 1.0 (.60 -> .31).
+- One look, bases 2017-25: tier bias hitters .49 -> .18, pitchers .58 -> .25. RMSE pitchers better at every h; hitters h4-6 slightly worse (1.126/1.057/1.027 -> 1.129/1.060/1.040). Role rate bias all inside .25.
+- C23 passes; h1 unchanged (hitters .669/1.251, pitchers .637/.832); rate bias hitters +.06 to +.15, pitchers -.03 to -.17.
+- Downstream: total MLB surplus $15.55B -> $15.33B; median $8.0M -> $8.7M. Top: Crow-Armstrong $226M -> $203M, McGonigle $160M -> $136M, Misiorowski $151M -> $137M (bigger than the plan's -$8-12M guess). Ohtani -$16M. Bottom-tier players rise (Emerson +$7M).
