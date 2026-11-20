@@ -587,3 +587,9 @@ Run: `python run.py` (all steps; `--refresh` re-pulls people and current-season 
 - Settled model (after #1, #3), 2027: rank corr .86 (unchanged). Top 10: our WAR -.58 vs Steamer, PT 94% of theirs. Relievers: -.17 WAR, but on 64% of Steamer's innings (our per-inning rate runs higher). Older: -1.31 WAR, PT 72% (Judge drives it; #7 targets this).
 - Steamer has Grant Taylor (23 GS) and Reid Detmers (31 GS) as starters; ours has both as relievers (Taylor 2.1 vs 2.6 WAR, Detmers 2.1 vs 3.3).
 - Nothing tuned to it. Steamer projects one season, so it cannot test years 3+ (#2 rests on the backtest alone, Decision F).
+
+### Injury-year playing time (audit 2026-11-19 #7), 2026-11-19: NOT shipped, fails its check
+- Rule tried (Decision E, generic): if base-season PT < PT_DIP_SHARE x prior norm (4/3-weighted PT of s-1, s-2), use the 5/4/3 window-average PT as the "last season" input. Grid .4/.5/.6/.7 on bases 2008-2016.
+- Evaluation group (fixed before the grid): base PT > 40% below prior norm (n 2,103 at h1). Without the rule, Marcel PT x attrition already OVER-projects them: proj/actual PT 1.17 at h1, 1.11 at h2. With the rule: 1.37-1.46 at h1, PT RMSE 146.8 -> 155-156 at every share. Overall PT RMSE 164.4 -> 166.
+- Established regulars inside that group (prior norm >= 500 PA / 450 outs, n 303; looked at after the grid): under-projected without the rule (.93 h1, .88 h2), over with it (1.25, 1.20). So Judge-type players are short by ~10%, but most short seasons are demotions or decline, and the full replacement overshoots both.
+- Open for Jack: a partial blend for regulars only (would be a new rule chosen after seeing this) or leave #7 closed. Judge stays at 314 PA for 2027.
